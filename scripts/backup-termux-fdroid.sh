@@ -12,7 +12,8 @@ REMOTE_ROOT="/data/data/com.termux"
 RETRY_DELAY="${RETRY_DELAY:-20}"
 
 SSH_OPTS=(-o ConnectTimeout=12 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
-RSYNC_OPTS=(-a --numeric-ids --partial --append-verify --timeout=30)
+RSYNC_OPTS=(-a --numeric-ids --partial --append-verify --human-readable \
+    --info=progress2,stats2 --timeout=30)
 
 mkdir -p "$DEST/files/home" "$DEST/files/usr" \
     "$DEST/package-data/shared_prefs" "$DEST/package-data/databases"
@@ -55,7 +56,10 @@ sync_tree() {
     local remote="$2"
     local local_path="$3"
 
-    run_with_retry "$label" rsync "${RSYNC_OPTS[@]}" \
+    log "$label: syncing $HOST:$remote/ -> $local_path/"
+    log "$label: rsync will first scan the remote file list; progress appears once transfer begins"
+    log "$label: a quiet period means file-list scanning or connection setup; I/O timeout is 30s"
+    run_with_retry "Sync $label" rsync "${RSYNC_OPTS[@]}" \
         -e "ssh ${SSH_OPTS[*]}" \
         "$HOST:$remote/" "$local_path/"
 }
