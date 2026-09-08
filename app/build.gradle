@@ -19,6 +19,11 @@ android {
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
     def appVersionName = System.getenv("TERMUX_APP_VERSION_NAME") ?: ""
     def apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
+    def rebroadSigningStoreFile = System.getenv("TERMUX_REBROAD_SIGNING_STORE_FILE")
+    def rebroadSigningStorePassword = System.getenv("TERMUX_REBROAD_SIGNING_STORE_PASSWORD")
+    def rebroadSigningKeyAlias = System.getenv("TERMUX_REBROAD_SIGNING_KEY_ALIAS")
+    def rebroadSigningKeyPassword = System.getenv("TERMUX_REBROAD_SIGNING_KEY_PASSWORD")
+    def rebroadSigningEnabled = rebroadSigningStoreFile && rebroadSigningStorePassword && rebroadSigningKeyAlias && rebroadSigningKeyPassword
     def splitAPKsForDebugBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS") ?: "1"
     def splitAPKsForReleaseBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS") ?: "0" // F-Droid does not support split APKs #1904
 
@@ -84,6 +89,14 @@ android {
             storePassword 'xrj45yWGLbsO7W0v'
             keyPassword 'xrj45yWGLbsO7W0v'
         }
+        if (rebroadSigningEnabled) {
+            rebroad {
+                storeFile file(rebroadSigningStoreFile)
+                storePassword rebroadSigningStorePassword
+                keyAlias rebroadSigningKeyAlias
+                keyPassword rebroadSigningKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -91,6 +104,7 @@ android {
             minifyEnabled true
             shrinkResources false // Reproducible builds
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (rebroadSigningEnabled) signingConfig signingConfigs.rebroad
         }
 
         debug {
