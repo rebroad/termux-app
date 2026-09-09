@@ -10,6 +10,8 @@ DEFAULT_BACKUP_ROOT="${TERMUX_BACKUP_ROOT:-$PWD/../termux-backups}"
 DEST="${2:-$DEFAULT_BACKUP_ROOT/termux-fdroid-$(date +%F)}"
 REMOTE_ROOT="/data/data/com.termux"
 RETRY_DELAY="${RETRY_DELAY:-20}"
+VERIFY_STABLE_CHECKS="${VERIFY_STABLE_CHECKS:-2}"
+VERIFY_STABLE_DELAY="${VERIFY_STABLE_DELAY:-5}"
 
 SSH_OPTS=(-o ConnectTimeout=12 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
 RSYNC_OPTS=(-a --numeric-ids --partial --append-verify --human-readable \
@@ -113,6 +115,7 @@ verify_tree() {
     local remote="$2"
     local local_path="$3"
     local report="$DEST/package-data/.verify-${label// /_}.tmp"
+    local stable_checks=0
 
     while true; do
         log "$label verification"
@@ -121,15 +124,24 @@ verify_tree() {
             --out-format='%i %n%L' -e "ssh ${SSH_OPTS[*]}" \
             "$HOST:$remote/" "$local_path/" >"$report"; then
             if [[ ! -s "$report" ]]; then
-                rm -f "$report"
-                log "$label verified"
-                return 0
+                stable_checks=$((stable_checks + 1))
+                if [[ "$stable_checks" -ge "$VERIFY_STABLE_CHECKS" ]]; then
+                    rm -f "$report"
+                    log "$label verified after $stable_checks consecutive clean checks"
+                    return 0
+                fi
+                log "$label is clean; waiting ${VERIFY_STABLE_DELAY}s for a stability check"
+                sleep "$VERIFY_STABLE_DELAY"
+                continue
             fi
-            log "$label differs; retrying after ${RETRY_DELAY}s"
+            stable_checks=0
+            log "$label differs; syncing the changed files before retrying"
+            sync_tree "$label verification" "$remote" "$local_path"
         else
+            stable_checks=0
             log "$label verification lost the connection; retrying after ${RETRY_DELAY}s"
+            sleep "$RETRY_DELAY"
         fi
-        sleep "$RETRY_DELAY"
     done
 }
 
