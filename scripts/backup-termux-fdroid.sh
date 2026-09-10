@@ -19,8 +19,7 @@ RSYNC_OPTS=(-a --numeric-ids --partial --append-verify --human-readable \
 VERIFY_RSYNC_OPTS=(-a --numeric-ids --partial --append-verify \
     --omit-dir-times --timeout=30)
 
-mkdir -p "$DEST/files/.git" "$DEST/files/home" "$DEST/files/usr" \
-    "$DEST/package-data/shared_prefs" "$DEST/package-data/databases"
+mkdir -p "$DEST/files" "$DEST/package-data/shared_prefs" "$DEST/package-data/databases"
 chmod 700 "$DEST"
 rm -f "$DEST/BACKUP-COMPLETE"
 
@@ -149,14 +148,11 @@ verify_tree() {
 
 log "Starting resumable backup from $HOST"
 run_with_retry "Checking remote Termux" ssh_once "test -d '$REMOTE_ROOT/files/home'"
-run_with_retry "Checking Termux home repository metadata" ssh_once "test -d '$REMOTE_ROOT/.git'"
 
-# The home repository is rooted at files/, not files/home/.  Keep its Git
-# metadata alongside the backed-up home tree so restoring files/home does not
-# silently lose the repository itself.
-sync_tree "Termux home repository metadata" "$REMOTE_ROOT/.git" "$DEST/files/.git"
-sync_tree "Termux home" "$REMOTE_ROOT/files/home" "$DEST/files/home"
-sync_tree "Termux prefix" "$REMOTE_ROOT/files/usr" "$DEST/files/usr"
+# Back up the complete private Termux files tree.  This includes home, usr,
+# repository metadata, and any future top-level entries without requiring the
+# backup script to be updated for each one.
+sync_tree "Termux files" "$REMOTE_ROOT/files" "$DEST/files"
 
 # These are outside files/ and would otherwise be lost by uninstalling the
 # Android package.  They are small and copied atomically after reconnects.
@@ -168,9 +164,7 @@ record_remote_file installed-packages.tsv \
     "dpkg-query -W -f='\${binary:Package}\t\${Version}\n' | sort"
 
 log "Verifying directory metadata with rsync dry runs"
-verify_tree "Termux home repository metadata" "$REMOTE_ROOT/.git" "$DEST/files/.git"
-verify_tree "Termux home" "$REMOTE_ROOT/files/home" "$DEST/files/home"
-verify_tree "Termux prefix" "$REMOTE_ROOT/files/usr" "$DEST/files/usr"
+verify_tree "Termux files" "$REMOTE_ROOT/files" "$DEST/files"
 
 printf 'host=%s\ncompleted=%s\n' "$HOST" "$(date --iso-8601=seconds)" >"$DEST/BACKUP-COMPLETE"
 chmod 600 "$DEST/BACKUP-COMPLETE"
