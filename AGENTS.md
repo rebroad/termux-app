@@ -31,3 +31,5 @@ Use Conventional Commits with a capitalized type and present-tense description, 
 ## Security & Configuration
 
 Never include private logs, signing keys, or credentials in commits. `app/testkey_untrusted.jks` is only a public test key; do not treat it as an official release key. Review `SECURITY.md` for vulnerability reports.
+
+The fork-local signing-file locations and signed-build procedure are documented in `docs/rebroad-signing.md`; the files themselves remain outside the repository.
