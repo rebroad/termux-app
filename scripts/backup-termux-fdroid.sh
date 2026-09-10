@@ -19,7 +19,7 @@ RSYNC_OPTS=(-a --numeric-ids --partial --append-verify --human-readable \
 VERIFY_RSYNC_OPTS=(-a --numeric-ids --partial --append-verify \
     --omit-dir-times --timeout=30)
 
-mkdir -p "$DEST/files/home" "$DEST/files/usr" \
+mkdir -p "$DEST/files/.git" "$DEST/files/home" "$DEST/files/usr" \
     "$DEST/package-data/shared_prefs" "$DEST/package-data/databases"
 chmod 700 "$DEST"
 rm -f "$DEST/BACKUP-COMPLETE"
@@ -149,7 +149,12 @@ verify_tree() {
 
 log "Starting resumable backup from $HOST"
 run_with_retry "Checking remote Termux" ssh_once "test -d '$REMOTE_ROOT/files/home'"
+run_with_retry "Checking Termux home repository metadata" ssh_once "test -d '$REMOTE_ROOT/.git'"
 
+# The home repository is rooted at files/, not files/home/.  Keep its Git
+# metadata alongside the backed-up home tree so restoring files/home does not
+# silently lose the repository itself.
+sync_tree "Termux home repository metadata" "$REMOTE_ROOT/.git" "$DEST/files/.git"
 sync_tree "Termux home" "$REMOTE_ROOT/files/home" "$DEST/files/home"
 sync_tree "Termux prefix" "$REMOTE_ROOT/files/usr" "$DEST/files/usr"
 
@@ -163,6 +168,7 @@ record_remote_file installed-packages.tsv \
     "dpkg-query -W -f='\${binary:Package}\t\${Version}\n' | sort"
 
 log "Verifying directory metadata with rsync dry runs"
+verify_tree "Termux home repository metadata" "$REMOTE_ROOT/.git" "$DEST/files/.git"
 verify_tree "Termux home" "$REMOTE_ROOT/files/home" "$DEST/files/home"
 verify_tree "Termux prefix" "$REMOTE_ROOT/files/usr" "$DEST/files/usr"
 
