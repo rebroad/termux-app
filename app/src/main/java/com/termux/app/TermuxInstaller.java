@@ -32,11 +32,11 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStreamReader;
-import java.util.Set;
-import java.util.HashSet;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -80,8 +80,6 @@ final class TermuxInstaller {
         CUSTOM_TERMUX_EXEC_FILES.add("bin/termux-identity");
         CUSTOM_TERMUX_EXEC_FILES.add("var/lib/dpkg/info/termux-exec.postinst");
     }
-
-
     /** Performs bootstrap setup if necessary. */
     static void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
         String bootstrapErrorMessage;
