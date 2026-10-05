@@ -167,6 +167,8 @@
                 <string name="termux_crash_report_notifications_enabled_title">Crash Report Notifications</string>
                 <string name="termux_crash_report_notifications_enabled_off">Disable notifications for crash reports.</string>
                 <string name="termux_crash_report_notifications_enabled_on">Show notifications for crash reports. (Default)</string>
+                <string name="termux_uname_syscall_intercept_title">Intercept raw uname syscalls</string>
+                <string name="termux_uname_syscall_intercept_summary">Return the configured Termux hostname to programs using raw syscalls. Applies to new process trees, adds syscall overhead, and may prevent su or other privilege escalation through no_new_privs.</string>
 
 
         <!-- Terminal IO Preferences -->

@@ -1,9 +1,12 @@
 package com.termux.shared.termux.settings.preferences;
 
 /*
- * Version: v0.16.0
+ * Version: v0.17.0
  *
  * Changelog
+ *
+ * - 0.17.0 (2026-10-05)
+ *      - Added the raw uname syscall interception preference to `TERMUX_APP`.
  *
  * - 0.1.0 (2021-03-12)
  *      - Initial Release.
@@ -183,6 +186,10 @@ public final class TermuxPreferenceConstants {
          */
         public static final String KEY_CRASH_REPORT_NOTIFICATIONS_ENABLED = "crash_report_notifications_enabled";
         public static final boolean DEFAULT_VALUE_CRASH_REPORT_NOTIFICATIONS_ENABLED = true;
+
+        /** Whether dynamically launched processes should intercept raw uname syscalls. */
+        public static final String KEY_UNAME_SYSCALL_INTERCEPT_ENABLED = "uname_syscall_intercept_enabled";
+        public static final boolean DEFAULT_VALUE_UNAME_SYSCALL_INTERCEPT_ENABLED = true;
 
     }
 
