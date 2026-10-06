@@ -67,6 +67,8 @@ android {
 
         manifestPlaceholders.TERMUX_GIT_COMMIT = gitCommit
 
+        manifestPlaceholders.TERMUX_GIT_COMMIT = gitCommit
+
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)
 
