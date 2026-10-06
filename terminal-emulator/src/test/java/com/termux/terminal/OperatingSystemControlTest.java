@@ -9,6 +9,14 @@ import java.util.Random;
 /** "ESC ]" is the Operating System Command. */
 public class OperatingSystemControlTest extends TerminalTestCase {
 
+    public void testTermuxSoftKeyboardRequest() {
+        mTerminal.append("\033]777;termux;show-keyboard\007");
+        assertEquals(1, mOutput.softKeyboardRequests);
+
+        mTerminal.append("\033]777;termux;unknown\007");
+        assertEquals(1, mOutput.softKeyboardRequests);
+    }
+
 	public void testSetTitle() throws Exception {
 		List<ChangedTitle> expectedTitleChanges = new ArrayList<>();
 

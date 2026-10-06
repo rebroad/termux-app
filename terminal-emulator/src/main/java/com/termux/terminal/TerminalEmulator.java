@@ -2029,6 +2029,9 @@ public final class TerminalEmulator {
         }
 
         switch (value) {
+            case 777: // Termux private extension: request showing the soft keyboard.
+                if ("termux;show-keyboard".equals(textParameter)) mSession.onSoftKeyboardRequest();
+                break;
             case 0: // Change icon name and window title to T.
             case 1: // Change icon name to T.
             case 2: // Change window title to T.
