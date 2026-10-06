@@ -49,6 +49,8 @@
         android:theme="@style/Theme.TermuxApp.DayNight.DarkActionBar"
         tools:targetApi="m">
 
+        <meta-data android:name="com.termux.GIT_COMMIT" android:value="${TERMUX_GIT_COMMIT}" />
+
         <activity
             android:name=".app.TermuxActivity"
             android:exported="true"
