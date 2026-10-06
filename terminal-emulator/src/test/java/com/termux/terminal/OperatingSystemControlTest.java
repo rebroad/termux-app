@@ -10,10 +10,13 @@ import java.util.Random;
 public class OperatingSystemControlTest extends TerminalTestCase {
 
     public void testTermuxSoftKeyboardRequest() {
-        mTerminal.append("\033]777;termux;show-keyboard\007");
+        withTerminalSized(80, 24);
+        byte[] request = "\033]777;termux;show-keyboard\007".getBytes();
+        mTerminal.append(request, request.length);
         assertEquals(1, mOutput.softKeyboardRequests);
 
-        mTerminal.append("\033]777;termux;unknown\007");
+        byte[] unknownRequest = "\033]777;termux;unknown\007".getBytes();
+        mTerminal.append(unknownRequest, unknownRequest.length);
         assertEquals(1, mOutput.softKeyboardRequests);
     }
 
