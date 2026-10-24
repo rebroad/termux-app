@@ -55,8 +55,8 @@ android {
         applicationId "com.termux"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 1008
-        versionName "0.118.4"
+        versionCode 1009
+        versionName "0.118.5"
 
         manifestPlaceholders.TERMUX_GIT_COMMIT = gitCommit
 
