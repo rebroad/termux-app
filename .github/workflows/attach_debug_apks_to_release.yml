@@ -28,9 +28,7 @@ jobs:
         run: |
           exit_on_error() {
               echo "$1"
-              echo "Deleting '$RELEASE_VERSION_NAME' release and '$GITHUB_REF' tag"
-              hub release delete "$RELEASE_VERSION_NAME"
-              git push --delete origin "$GITHUB_REF"
+              echo "APK attachment failed for '$RELEASE_VERSION_NAME'; preserving the release and tag for recovery."
               exit 1
           }
 
