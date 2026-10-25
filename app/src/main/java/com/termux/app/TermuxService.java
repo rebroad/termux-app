@@ -174,9 +174,10 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
             }
         }
 
-        // If this service really do get killed, there is no point restarting it automatically - let the user do on next
-        // start of {@link Term):
-        return Service.START_NOT_STICKY;
+        // Android may kill the process under memory pressure. Restart the foreground service
+        // without redelivering the last command; a null intent restores the service without
+        // accidentally running a terminal command twice.
+        return Service.START_STICKY;
     }
 
     @Override
