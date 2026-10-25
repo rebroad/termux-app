@@ -6,8 +6,8 @@ repository or commit passwords, generated APKs, or build outputs.
 The Termux release keystore is stored outside the repositories at:
 
 ```text
-/home/rebroad/.config/rebroad-termux/termux-release.jks
-/home/rebroad/.config/rebroad-termux/termux-release.pass
+$HOME/.config/rebroad-termux/termux-release.jks
+$HOME/.config/rebroad-termux/termux-release.pass
 ```
 
 The password file must remain mode `600`. The keystore alias is
@@ -20,8 +20,8 @@ external build tree:
 cpto /mnt/kingston/@home/rebroad/src/termux-app \
     /mnt/kingston/builds/rebroad/src/termux-app.build
 
-pass=$(< /home/rebroad/.config/rebroad-termux/termux-release.pass)
-TERMUX_REBROAD_SIGNING_STORE_FILE=/home/rebroad/.config/rebroad-termux/termux-release.jks \
+pass=$(< "$HOME/.config/rebroad-termux/termux-release.pass")
+TERMUX_REBROAD_SIGNING_STORE_FILE="$HOME/.config/rebroad-termux/termux-release.jks" \
 TERMUX_REBROAD_SIGNING_STORE_PASSWORD="$pass" \
 TERMUX_REBROAD_SIGNING_KEY_ALIAS=rebroad-termux \
 TERMUX_REBROAD_SIGNING_KEY_PASSWORD="$pass" \
