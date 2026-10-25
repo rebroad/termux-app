@@ -547,7 +547,7 @@ public final class TerminalView extends View {
         mNewOutputAvailable = true;
         if (mNewOutputIndicatorFlashAnimator == null) {
             mNewOutputIndicatorFlashAnimator = ValueAnimator.ofFloat(0f, 1f, 0f);
-            mNewOutputIndicatorFlashAnimator.setDuration(100);
+            mNewOutputIndicatorFlashAnimator.setDuration(250);
             mNewOutputIndicatorFlashAnimator.addUpdateListener(animation -> {
                 mNewOutputIndicatorFlash = (float) animation.getAnimatedValue();
                 invalidate();
@@ -1136,13 +1136,14 @@ public final class TerminalView extends View {
         float density = getResources().getDisplayMetrics().density;
         float radius = 20f * density;
         float centerX = getWidth() / 2f;
-        float centerY = getHeight() / 2f;
+        float centerY = getHeight() - 28f * density;
         mNewOutputIndicatorBounds.set(centerX - 24f * density, centerY - 24f * density,
             centerX + 24f * density, centerY + 24f * density);
 
+        int shade = 0x42 + Math.round((0x78 - 0x42) * mNewOutputIndicatorFlash);
         int baseAlpha = 0xDD + Math.round((0xFF - 0xDD) * mNewOutputIndicatorFlash);
         int alpha = Math.round(baseAlpha * mNewOutputIndicatorAlpha);
-        mNewOutputIndicatorPaint.setColor((alpha << 24) | 0x424242);
+        mNewOutputIndicatorPaint.setColor((alpha << 24) | (shade << 16) | (shade << 8) | shade);
         canvas.drawCircle(centerX, centerY, radius, mNewOutputIndicatorPaint);
         mNewOutputIndicatorPaint.setColor((Math.round(0xFF * mNewOutputIndicatorAlpha) << 24) | 0xFFFFFF);
         mNewOutputIndicatorPaint.setStrokeWidth(2f * density);
