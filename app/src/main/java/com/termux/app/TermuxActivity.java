@@ -396,7 +396,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         if (mTermuxService.isTermuxSessionsEmpty()) {
             if (mIsVisible) {
-                TermuxInstaller.setupBootstrapIfNeeded(TermuxActivity.this, () -> {
+                TermuxInstaller.setupBootstrapIfNeeded(TermuxActivity.this, () -> TermuxInstaller.updateCustomizedTermuxExecIfNeeded(TermuxActivity.this, () -> {
                     if (mTermuxService == null) return; // Activity might have been destroyed.
                     try {
                         boolean launchFailsafe = false;
@@ -407,7 +407,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                     } catch (WindowManager.BadTokenException e) {
                         // Activity finished - ignore.
                     }
-                });
+                }));
             } else {
                 // The service connected while not in foreground - just bail out.
                 finishActivityIfNotFinishing();
@@ -419,9 +419,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             if (!mIsActivityRecreated && intent != null && Intent.ACTION_RUN.equals(intent.getAction())) {
                 // Android 7.1 app shortcut from res/xml/shortcuts.xml.
                 boolean isFailSafe = intent.getBooleanExtra(TERMUX_ACTIVITY.EXTRA_FAILSAFE_SESSION, false);
-                mTermuxTerminalSessionActivityClient.addNewSession(isFailSafe, null);
+                TermuxInstaller.updateCustomizedTermuxExecIfNeeded(TermuxActivity.this, () ->
+                    mTermuxTerminalSessionActivityClient.addNewSession(isFailSafe, null));
             } else {
-                mTermuxTerminalSessionActivityClient.setCurrentSession(mTermuxTerminalSessionActivityClient.getCurrentStoredSessionOrLast());
+                TermuxInstaller.updateCustomizedTermuxExecIfNeeded(TermuxActivity.this, () ->
+                    mTermuxTerminalSessionActivityClient.setCurrentSession(mTermuxTerminalSessionActivityClient.getCurrentStoredSessionOrLast()));
             }
         }
 

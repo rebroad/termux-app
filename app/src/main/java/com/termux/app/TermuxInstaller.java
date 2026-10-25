@@ -28,8 +28,11 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -60,6 +63,19 @@ import static com.termux.shared.termux.TermuxConstants.TERMUX_STAGING_PREFIX_DIR
 final class TermuxInstaller {
 
     private static final String LOG_TAG = "TermuxInstaller";
+    private static final String CUSTOM_TERMUX_EXEC_MARKER = "etc/termux/rebroad-termux-exec";
+    private static final Set<String> CUSTOM_TERMUX_EXEC_FILES = new HashSet<>();
+
+    static {
+        CUSTOM_TERMUX_EXEC_FILES.add("lib/libtermux-exec-ld-preload.so");
+        CUSTOM_TERMUX_EXEC_FILES.add("lib/libtermux-exec-direct-ld-preload.so");
+        CUSTOM_TERMUX_EXEC_FILES.add("lib/libtermux-exec-linker-ld-preload.so");
+        CUSTOM_TERMUX_EXEC_FILES.add("lib/libtermux-exec_nos_c_tre.so");
+        CUSTOM_TERMUX_EXEC_FILES.add("bin/termux-exec-ld-preload-lib");
+        CUSTOM_TERMUX_EXEC_FILES.add("bin/termux-exec-system-linker-exec");
+        CUSTOM_TERMUX_EXEC_FILES.add("bin/termux-identity");
+        CUSTOM_TERMUX_EXEC_FILES.add("var/lib/dpkg/info/termux-exec.postinst");
+    }
 
     /** Performs bootstrap setup if necessary. */
     static void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
@@ -237,6 +253,57 @@ final class TermuxInstaller {
                 }
             }
         }.start();
+    }
+
+    /** Update the customized termux-exec files in an already initialized prefix once. */
+    static void updateCustomizedTermuxExecIfNeeded(final Activity activity, final Runnable whenDone) {
+        final File marker = new File(TERMUX_PREFIX_DIR_PATH, CUSTOM_TERMUX_EXEC_MARKER);
+        if (marker.isFile()) {
+            whenDone.run();
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                final byte[] buffer = new byte[8096];
+                final byte[] zipBytes = loadZipBytes();
+                final Set<String> copiedFiles = new HashSet<>();
+                try (ZipInputStream zipInput = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+                    ZipEntry zipEntry;
+                    while ((zipEntry = zipInput.getNextEntry()) != null) {
+                        final String name = zipEntry.getName();
+                        if (!CUSTOM_TERMUX_EXEC_FILES.contains(name) || zipEntry.isDirectory()) continue;
+                        copiedFiles.add(name);
+
+                        final File targetFile = new File(TERMUX_PREFIX_DIR_PATH, name);
+                        Error error = ensureDirectoryExists(targetFile.getParentFile());
+                        if (error != null) throw new RuntimeException(Error.getErrorMarkdownString(error));
+                        try (FileOutputStream outStream = new FileOutputStream(targetFile)) {
+                            int readBytes;
+                            while ((readBytes = zipInput.read(buffer)) != -1)
+                                outStream.write(buffer, 0, readBytes);
+                        }
+                        if (name.startsWith("bin/")) Os.chmod(targetFile.getAbsolutePath(), 0700);
+                    }
+                }
+
+                if (!copiedFiles.containsAll(CUSTOM_TERMUX_EXEC_FILES))
+                    throw new RuntimeException("Customized termux-exec files missing from bootstrap: " +
+                        CUSTOM_TERMUX_EXEC_FILES.toString());
+
+                Error markerDirectoryError = ensureDirectoryExists(marker.getParentFile());
+                if (markerDirectoryError != null)
+                    throw new RuntimeException(Error.getErrorMarkdownString(markerDirectoryError));
+                try (FileOutputStream outStream = new FileOutputStream(marker)) {
+                    outStream.write("1\n".getBytes(StandardCharsets.UTF_8));
+                }
+                Logger.logInfo(LOG_TAG, "Customized termux-exec files installed.");
+            } catch (Exception e) {
+                Logger.logErrorExtended(LOG_TAG, "Unable to update customized termux-exec files:\n" +
+                    Logger.getStackTracesMarkdownString(null, Logger.getStackTracesStringArray(e)));
+            }
+            activity.runOnUiThread(whenDone);
+        }, "termux-exec-migration").start();
     }
 
     public static void showBootstrapErrorDialog(Activity activity, Runnable whenDone, String message) {
