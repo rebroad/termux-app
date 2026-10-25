@@ -134,7 +134,7 @@ final class TermuxInstaller {
             if (TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
                 Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" exists but is empty or only contains specific unimportant files.");
             } else {
-                migrateReBroadAptRepositoryIfNeeded();
+                migrateReBroadAptRepositoryIfNeeded(activity);
                 whenDone.run();
                 return;
             }
@@ -275,6 +275,7 @@ final class TermuxInstaller {
                     }
 
                     Logger.logInfo(LOG_TAG, "Bootstrap packages installed successfully.");
+                    migrateReBroadAptRepositoryIfNeeded(activity);
 
                     // Recreate env file since termux prefix was wiped earlier
                     TermuxShellEnvironment.writeEnvironmentToFile(activity);
@@ -302,58 +303,46 @@ final class TermuxInstaller {
      * upgrade. Import only the missing ReBroad APT files once, leaving any
      * existing APT sources, preferences and mirror selections untouched.
      */
-    private static void migrateReBroadAptRepositoryIfNeeded() {
+    private static void migrateReBroadAptRepositoryIfNeeded(Context context) {
         if (!android.os.Process.is64Bit()) return;
 
-        File marker = new File(TERMUX_PREFIX_DIR_PATH, "etc/termux/rebroad-apt-repository-v2");
+        File marker = new File(TERMUX_PREFIX_DIR_PATH, "etc/termux/rebroad-apt-repository-v3");
         if (marker.exists()) return;
 
-        Set<String> pending = new HashSet<>();
-        pending.add("etc/apt/keyrings/rebroad.asc");
-        pending.add("etc/apt/sources.list.d/rebroad.list");
-        pending.add("etc/apt/preferences.d/00-rebroad");
+        String[] paths = {
+            "etc/apt/keyrings/rebroad.asc",
+            "etc/apt/sources.list.d/rebroad.list",
+            "etc/apt/preferences.d/00-rebroad"
+        };
+        int[] resources = {
+            R.raw.rebroad_apt_key,
+            R.raw.rebroad_apt_source,
+            R.raw.rebroad_apt_preferences
+        };
 
         try {
-            byte[] zipBytes = loadZipBytes();
-            try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
-                ZipEntry entry;
-                byte[] buffer = new byte[8192];
-                while (!pending.isEmpty() && (entry = zip.getNextEntry()) != null) {
-                    String name = entry.getName();
-                    if (!pending.contains(name) || entry.isDirectory()) continue;
+            for (int i = 0; i < paths.length; i++) {
+                File destination = new File(TERMUX_PREFIX_DIR_PATH, paths[i]);
+                File parent = destination.getParentFile();
+                if (!parent.isDirectory() && !parent.mkdirs())
+                    throw new java.io.IOException("Cannot create APT directory: " + parent);
 
-                    File destination = new File(TERMUX_PREFIX_DIR_PATH, name);
-                    File parent = destination.getParentFile();
-                    if (!parent.isDirectory() && !parent.mkdirs())
-                        throw new java.io.IOException("Cannot create APT directory: " + parent);
-
-                    // Always replace ReBroad's own archive key during key rotation.
-                    // Preserve existing mirror choices, source lists, and APT pins.
-                    boolean refreshArchiveKey = "etc/apt/keyrings/rebroad.asc".equals(name);
-                    if (refreshArchiveKey || !destination.exists()) {
-                        File temporary = File.createTempFile("rebroad-apt-", ".tmp", parent);
-                        try {
-                            try (FileOutputStream output = new FileOutputStream(temporary)) {
-                                int bytes;
-                                while ((bytes = zip.read(buffer)) != -1)
-                                    output.write(buffer, 0, bytes);
-                            }
-                            Os.chmod(temporary.getAbsolutePath(), 0644);
-                            if (!temporary.renameTo(destination))
-                                throw new java.io.IOException("Cannot install APT configuration: " + destination);
-                        } finally {
-                            // A successful rename moves the file; otherwise clean up the partial file.
-                            if (temporary.exists() && !temporary.delete())
-                                Logger.logWarn(LOG_TAG, "Cannot remove temporary APT config: " + temporary);
-                        }
+                File temporary = File.createTempFile("rebroad-apt-", ".tmp", parent);
+                try {
+                    try (java.io.InputStream input = context.getResources().openRawResource(resources[i]);
+                         FileOutputStream output = new FileOutputStream(temporary)) {
+                        byte[] buffer = new byte[8192];
+                        int bytes;
+                        while ((bytes = input.read(buffer)) != -1)
+                            output.write(buffer, 0, bytes);
                     }
-                    pending.remove(name);
+                    Os.chmod(temporary.getAbsolutePath(), 0644);
+                    if (!temporary.renameTo(destination))
+                        throw new java.io.IOException("Cannot install APT configuration: " + destination);
+                } finally {
+                    if (temporary.exists() && !temporary.delete())
+                        Logger.logWarn(LOG_TAG, "Cannot remove temporary APT config: " + temporary);
                 }
-            }
-
-            if (!pending.isEmpty()) {
-                Logger.logWarn(LOG_TAG, "ReBroad APT bootstrap entries missing: " + pending);
-                return;
             }
 
             File markerParent = marker.getParentFile();
@@ -361,9 +350,8 @@ final class TermuxInstaller {
                 throw new java.io.IOException("Cannot create APT migration marker directory");
             if (!marker.createNewFile() && !marker.exists())
                 throw new java.io.IOException("Cannot record ReBroad APT migration");
-            Logger.logInfo(LOG_TAG, "Installed the signed ReBroad APT source for an existing Termux prefix.");
+            Logger.logInfo(LOG_TAG, "Installed the signed ReBroad APT source and archive key.");
         } catch (Exception e) {
-            // Do not prevent a previously working Termux session from starting.
             Logger.logError(LOG_TAG, "ReBroad APT source migration failed: " + e);
         }
     }
