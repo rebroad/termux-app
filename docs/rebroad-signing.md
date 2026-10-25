@@ -17,16 +17,16 @@ From the source checkout, synchronize first and build only in the designated
 external build tree:
 
 ```sh
-cpto /mnt/kingston/@home/rebroad/src/termux-app \
-    /mnt/kingston/builds/rebroad/src/termux-app.build
+cpto --no-lngit "$HOME/src/termux" \
+    "$HOME/src/termux.build"
 
 pass=$(< "$HOME/.config/rebroad-termux/termux-release.pass")
 TERMUX_REBROAD_SIGNING_STORE_FILE="$HOME/.config/rebroad-termux/termux-release.jks" \
 TERMUX_REBROAD_SIGNING_STORE_PASSWORD="$pass" \
 TERMUX_REBROAD_SIGNING_KEY_ALIAS=rebroad-termux \
 TERMUX_REBROAD_SIGNING_KEY_PASSWORD="$pass" \
-/mnt/kingston/builds/rebroad/src/termux-app.build/gradlew \
-    -p /mnt/kingston/builds/rebroad/src/termux-app.build :app:assembleRelease
+"$HOME/src/termux.build/termux-app/gradlew" \
+    -p "$HOME/src/termux.build/termux-app" :app:assembleRelease
 unset pass
 ```
 
