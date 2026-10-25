@@ -459,6 +459,7 @@ public final class TerminalView extends View {
 
         int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
         if (mTopRow < -rowsInHistory) mTopRow = -rowsInHistory;
+        boolean wasAtBottom = mTopRow == 0;
 
         if (isSelectingText() || mEmulator.isAutoScrollDisabled()) {
 
@@ -481,21 +482,28 @@ public final class TerminalView extends View {
             }
         }
 
-        if (!skipScrolling && mTopRow != 0) {
-            // Scroll down if not already there.
-            if (mTopRow < -3) {
+        if (!skipScrolling) {
+            int updatedTopRow = calculateTopRowAfterScreenUpdate(mTopRow, rowsInHistory,
+                mEmulator.getScrollCounter(), wasAtBottom);
+            if (updatedTopRow != mTopRow && Math.abs(updatedTopRow - mTopRow) > 3) {
                 // Awaken scroll bars only if scrolling a noticeable amount
                 // - we do not want visible scroll bars during normal typing
                 // of one row at a time.
                 awakenScrollBars();
             }
-            mTopRow = 0;
+            mTopRow = updatedTopRow;
         }
 
         mEmulator.clearScrollCounter();
 
         invalidate();
         if (mAccessibilityEnabled) setContentDescription(getText());
+    }
+
+    static int calculateTopRowAfterScreenUpdate(int topRow, int rowsInHistory, int rowShift, boolean wasAtBottom) {
+        int updatedTopRow = Math.max(-rowsInHistory, Math.min(0, topRow));
+        if (wasAtBottom) return 0;
+        return Math.max(-rowsInHistory, updatedTopRow - rowShift);
     }
 
     /** This must be called by the hosting activity in {@link Activity#onContextMenuClosed(Menu)}
