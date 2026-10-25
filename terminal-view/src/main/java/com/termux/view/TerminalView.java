@@ -293,8 +293,6 @@ public final class TerminalView extends View {
         mTermSession = session;
         mEmulator = null;
         mCombiningAccent = 0;
-
-        // The emulator's cached value will be read in `updateSize()` when emulator is set.
         setTopRow(0, false);
 
         updateSize();
@@ -461,8 +459,10 @@ public final class TerminalView extends View {
 
         int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
         if (mTopRow < -rowsInHistory) setTopRow(-rowsInHistory);
+        boolean wasAtBottom = mTopRow == 0;
 
         if (isSelectingText() || mEmulator.isAutoScrollDisabled()) {
+
             // Do not scroll when selecting text.
             int rowShift = mEmulator.getScrollCounter();
             if (-mTopRow + rowShift > rowsInHistory) {
@@ -482,21 +482,28 @@ public final class TerminalView extends View {
             }
         }
 
-        if (!skipScrolling && mTopRow != 0) {
-            // Scroll down if not already there.
-            if (mTopRow < -3) {
+        if (!skipScrolling) {
+            int updatedTopRow = calculateTopRowAfterScreenUpdate(mTopRow, rowsInHistory,
+                mEmulator.getScrollCounter(), wasAtBottom);
+            if (updatedTopRow != mTopRow && Math.abs(updatedTopRow - mTopRow) > 3) {
                 // Awaken scroll bars only if scrolling a noticeable amount
                 // - we do not want visible scroll bars during normal typing
                 // of one row at a time.
                 awakenScrollBars();
             }
-            setTopRow(0);
+            setTopRow(updatedTopRow);
         }
 
         mEmulator.clearScrollCounter();
 
         invalidate();
         if (mAccessibilityEnabled) setContentDescription(getText());
+    }
+
+    static int calculateTopRowAfterScreenUpdate(int topRow, int rowsInHistory, int rowShift, boolean wasAtBottom) {
+        int updatedTopRow = Math.max(-rowsInHistory, Math.min(0, topRow));
+        if (wasAtBottom) return 0;
+        return Math.max(-rowsInHistory, updatedTopRow - rowShift);
     }
 
     /** This must be called by the hosting activity in {@link Activity#onContextMenuClosed(Menu)}
@@ -992,6 +999,8 @@ public final class TerminalView extends View {
         int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
 
         if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
+            boolean switchingEmulator = mEmulator == null;
+            int previousTopRow = mTopRow;
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
             mClient.onEmulatorSet();
@@ -1000,19 +1009,9 @@ public final class TerminalView extends View {
             if (mTerminalCursorBlinkerRunnable != null)
                 mTerminalCursorBlinkerRunnable.setEmulator(mEmulator);
 
-            // Restore cached top row value if session/emulator was switched back from a
-            // different session or after activity restart. The top row value also needs to be
-            // maintained after opening/closing soft keyboard.
-            int topRow = 0;
-            if (mEmulator != null) {
-                int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
-                int cachedTopRow = mEmulator.getTopRow();
-                if (cachedTopRow >= -rowsInHistory) {
-                    topRow = cachedTopRow;
-                }
-            }
-            setTopRow(topRow);
-
+            int historyRows = mEmulator.getScreen().getActiveTranscriptRows();
+            int targetTopRow = switchingEmulator ? mEmulator.getTopRow() : previousTopRow;
+            setTopRow(Math.max(-historyRows, Math.min(0, targetTopRow)));
             scrollTo(0, 0);
             invalidate();
         }
@@ -1073,9 +1072,7 @@ public final class TerminalView extends View {
 
     public void setTopRow(int topRow, boolean updateEmulator) {
         mTopRow = topRow;
-        if (updateEmulator && mEmulator != null) {
-            mEmulator.setTopRow(mTopRow);
-        }
+        if (updateEmulator && mEmulator != null) mEmulator.setTopRow(topRow);
     }
 
 
