@@ -77,8 +77,12 @@ public final class TerminalView extends View {
     private boolean mNewOutputAvailable;
     private final RectF mNewOutputIndicatorBounds = new RectF();
     private final Paint mNewOutputIndicatorPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private ValueAnimator mNewOutputIndicatorAnimator;
-    private float mNewOutputIndicatorPulse = 1f;
+    private ValueAnimator mNewOutputIndicatorFlashAnimator;
+    private ValueAnimator mNewOutputIndicatorFadeAnimator;
+    private float mNewOutputIndicatorFlash;
+    private float mNewOutputIndicatorAlpha = 1f;
+    private boolean mNewOutputIndicatorScrolling;
+    private final Runnable mNewOutputIndicatorScrollEnd = () -> setNewOutputIndicatorScrolling(false);
     int[] mDefaultSelectors = new int[]{-1,-1,-1,-1};
 
     float mScaleFactor = 1.f;
@@ -153,6 +157,7 @@ public final class TerminalView extends View {
             @Override
             public boolean onUp(MotionEvent event) {
                 mScrollRemainder = 0.0f;
+                endNewOutputIndicatorScrolling();
                 if (mEmulator != null && mEmulator.isMouseTrackingActive() && !event.isFromSource(InputDevice.SOURCE_MOUSE) && !isSelectingText() && !scrolledWithFinger) {
                     // Quick event processing when mouse tracking is active - do not wait for check of double tapping
                     // for zooming.
@@ -188,6 +193,7 @@ public final class TerminalView extends View {
                     sendMouseEventCode(e, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
                 } else {
                     scrolledWithFinger = true;
+                    setNewOutputIndicatorScrolling(true);
                     distanceY += mScrollRemainder;
                     int deltaRows = (int) (distanceY / mRenderer.mFontLineSpacing);
                     mScrollRemainder = distanceY - deltaRows * mRenderer.mFontLineSpacing;
@@ -209,6 +215,8 @@ public final class TerminalView extends View {
                 if (mEmulator == null) return true;
                 // Do not start scrolling until last fling has been taken care of:
                 if (!mScroller.isFinished()) return true;
+
+                setNewOutputIndicatorScrolling(true);
 
                 final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
                 float SCALE = 0.25f;
@@ -537,29 +545,46 @@ public final class TerminalView extends View {
 
     private void showNewOutputIndicator() {
         mNewOutputAvailable = true;
-        if (mNewOutputIndicatorAnimator == null) {
-            mNewOutputIndicatorAnimator = ValueAnimator.ofFloat(0.75f, 1f);
-            mNewOutputIndicatorAnimator.setDuration(700);
-            mNewOutputIndicatorAnimator.setRepeatCount(ValueAnimator.INFINITE);
-            mNewOutputIndicatorAnimator.setRepeatMode(ValueAnimator.REVERSE);
-            mNewOutputIndicatorAnimator.addUpdateListener(animation -> {
-                mNewOutputIndicatorPulse = (float) animation.getAnimatedValue();
+        if (mNewOutputIndicatorFlashAnimator == null) {
+            mNewOutputIndicatorFlashAnimator = ValueAnimator.ofFloat(0f, 1f, 0f);
+            mNewOutputIndicatorFlashAnimator.setDuration(100);
+            mNewOutputIndicatorFlashAnimator.addUpdateListener(animation -> {
+                mNewOutputIndicatorFlash = (float) animation.getAnimatedValue();
                 invalidate();
             });
         }
-        if (!mNewOutputIndicatorAnimator.isStarted()) mNewOutputIndicatorAnimator.start();
+        mNewOutputIndicatorFlashAnimator.cancel();
+        mNewOutputIndicatorFlashAnimator.start();
         invalidate();
     }
 
     private void clearNewOutputIndicator() {
         mNewOutputAvailable = false;
-        if (mNewOutputIndicatorAnimator != null) mNewOutputIndicatorAnimator.cancel();
-        mNewOutputIndicatorPulse = 1f;
+        if (mNewOutputIndicatorFlashAnimator != null) mNewOutputIndicatorFlashAnimator.cancel();
+        mNewOutputIndicatorFlash = 0f;
         invalidate();
     }
 
+    private void setNewOutputIndicatorScrolling(boolean scrolling) {
+        removeCallbacks(mNewOutputIndicatorScrollEnd);
+        if (mNewOutputIndicatorScrolling == scrolling) return;
+        mNewOutputIndicatorScrolling = scrolling;
+        if (mNewOutputIndicatorFadeAnimator != null) mNewOutputIndicatorFadeAnimator.cancel();
+        mNewOutputIndicatorFadeAnimator = ValueAnimator.ofFloat(mNewOutputIndicatorAlpha, scrolling ? 0f : 1f);
+        mNewOutputIndicatorFadeAnimator.setDuration(150);
+        mNewOutputIndicatorFadeAnimator.addUpdateListener(animation -> {
+            mNewOutputIndicatorAlpha = (float) animation.getAnimatedValue();
+            invalidate();
+        });
+        mNewOutputIndicatorFadeAnimator.start();
+    }
+
+    private void endNewOutputIndicatorScrolling() {
+        postDelayed(mNewOutputIndicatorScrollEnd, 150);
+    }
+
     private boolean handleNewOutputIndicatorTouch(MotionEvent event) {
-        if (!mNewOutputAvailable || !mNewOutputIndicatorBounds.contains(event.getX(), event.getY())) return false;
+        if (!mNewOutputAvailable || mNewOutputIndicatorAlpha == 0f || !mNewOutputIndicatorBounds.contains(event.getX(), event.getY())) return false;
         if (event.getAction() == MotionEvent.ACTION_UP) {
             mTopRow = 0;
             clearNewOutputIndicator();
@@ -641,6 +666,10 @@ public final class TerminalView extends View {
 
     /** Perform a scroll, either from dragging the screen or by scrolling a mouse wheel. */
     void doScroll(MotionEvent event, int rowsDown) {
+        if (rowsDown != 0) {
+            setNewOutputIndicatorScrolling(true);
+            endNewOutputIndicatorScrolling();
+        }
         boolean up = rowsDown < 0;
         int amount = Math.abs(rowsDown);
         for (int i = 0; i < amount; i++) {
@@ -678,6 +707,9 @@ public final class TerminalView extends View {
         final int action = event.getAction();
 
         if (handleNewOutputIndicatorTouch(event)) return true;
+
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
+            endNewOutputIndicatorScrolling();
 
         if (isSelectingText()) {
             updateFloatingToolbarVisibility(event);
@@ -1063,6 +1095,7 @@ public final class TerminalView extends View {
         int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
 
         if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
+            int previousTopRow = mTopRow;
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
             mClient.onEmulatorSet();
@@ -1071,7 +1104,8 @@ public final class TerminalView extends View {
             if (mTerminalCursorBlinkerRunnable != null)
                 mTerminalCursorBlinkerRunnable.setEmulator(mEmulator);
 
-            mTopRow = 0;
+            mTopRow = Math.max(-mEmulator.getScreen().getActiveTranscriptRows(), Math.min(0, previousTopRow));
+            if (mTopRow == 0) clearNewOutputIndicator();
             scrollTo(0, 0);
             invalidate();
         }
@@ -1097,18 +1131,20 @@ public final class TerminalView extends View {
     }
 
     private void drawNewOutputIndicator(Canvas canvas) {
-        if (!mNewOutputAvailable || isSelectingText()) return;
+        if (!mNewOutputAvailable || isSelectingText() || mNewOutputIndicatorAlpha == 0f) return;
 
         float density = getResources().getDisplayMetrics().density;
-        float radius = 20f * density * mNewOutputIndicatorPulse;
-        float centerX = getWidth() - 28f * density;
-        float centerY = getHeight() - 28f * density;
+        float radius = 20f * density;
+        float centerX = getWidth() / 2f;
+        float centerY = getHeight() / 2f;
         mNewOutputIndicatorBounds.set(centerX - 24f * density, centerY - 24f * density,
             centerX + 24f * density, centerY + 24f * density);
 
-        mNewOutputIndicatorPaint.setColor(0xDD424242);
+        int baseAlpha = 0xDD + Math.round((0xFF - 0xDD) * mNewOutputIndicatorFlash);
+        int alpha = Math.round(baseAlpha * mNewOutputIndicatorAlpha);
+        mNewOutputIndicatorPaint.setColor((alpha << 24) | 0x424242);
         canvas.drawCircle(centerX, centerY, radius, mNewOutputIndicatorPaint);
-        mNewOutputIndicatorPaint.setColor(0xFFFFFFFF);
+        mNewOutputIndicatorPaint.setColor((Math.round(0xFF * mNewOutputIndicatorAlpha) << 24) | 0xFFFFFF);
         mNewOutputIndicatorPaint.setStrokeWidth(2f * density);
         mNewOutputIndicatorPaint.setStyle(Paint.Style.STROKE);
         mNewOutputIndicatorPaint.setStrokeCap(Paint.Cap.ROUND);
@@ -1537,7 +1573,9 @@ public final class TerminalView extends View {
 
     @Override
     protected void onDetachedFromWindow() {
-        if (mNewOutputIndicatorAnimator != null) mNewOutputIndicatorAnimator.cancel();
+        removeCallbacks(mNewOutputIndicatorScrollEnd);
+        if (mNewOutputIndicatorFlashAnimator != null) mNewOutputIndicatorFlashAnimator.cancel();
+        if (mNewOutputIndicatorFadeAnimator != null) mNewOutputIndicatorFadeAnimator.cancel();
         super.onDetachedFromWindow();
 
         if (mTextSelectionCursorController != null) {
