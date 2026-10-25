@@ -1,0 +1,1 @@
+deb [arch=aarch64 signed-by=/data/data/com.termux/files/usr/etc/apt/keyrings/rebroad.asc] https://raw.githubusercontent.com/rebroad/termux-packages/apt-repo stable main
