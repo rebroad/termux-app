@@ -129,7 +129,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             // Only show toast for other sessions than the current one, since the user
             // probably consciously caused the title change to change in the current session
             // and don't want an annoying toast for that.
-            mActivity.showToast(toToastTitle(updatedSession), true);
+            mActivity.showSessionTitleNotification(toToastTitle(updatedSession), updatedSession);
         }
 
         termuxSessionListNotifyUpdated();
@@ -238,7 +238,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void setTerminalShellPid(@NonNull TerminalSession terminalSession, int pid) {
         TermuxService service = mActivity.getTermuxService();
         if (service == null) return;
-        
+
         TermuxSession termuxSession = service.getTermuxSessionForTerminalSession(terminalSession);
         if (termuxSession != null)
             termuxSession.getExecutionCommand().mPid = pid;
@@ -292,6 +292,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     /** Try switching to session. */
     public void setCurrentSession(TerminalSession session) {
         if (session == null) return;
+
+        mActivity.clearSessionTitleNotification(session);
 
         if (mActivity.getTerminalView().attachSession(session)) {
             // notify about switched session if not already displaying the session

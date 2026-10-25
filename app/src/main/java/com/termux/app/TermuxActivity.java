@@ -20,11 +20,13 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.MotionEvent;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.RelativeLayout;
 import android.widget.Toast;
+import android.widget.TextView;
 
 import com.termux.R;
 import com.termux.app.api.file.FileReceiverActivity;
@@ -66,6 +68,8 @@ import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.viewpager.widget.ViewPager;
 
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * A terminal emulator activity.
@@ -147,6 +151,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
      * The last toast shown, used cancel current toast before showing new in {@link #showToast(String, boolean)}.
      */
     Toast mLastToast;
+
+    private TextView mSessionTitleNotification;
+    private String mSessionTitleNotificationHandle;
+    private float mSessionTitleNotificationDownX;
+    private final Set<String> mDismissedSessionTitleNotifications = new HashSet<>();
 
     /**
      * If between onResume() and onStop(). Note that only one session is in the foreground of the terminal view at the
@@ -230,6 +239,28 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         mTermuxActivityRootView.setActivity(this);
         mTermuxActivityBottomSpaceView = findViewById(R.id.activity_termux_bottom_space_view);
         mTermuxActivityRootView.setOnApplyWindowInsetsListener(new TermuxActivityRootView.WindowInsetsListener());
+        mSessionTitleNotification = findViewById(R.id.session_title_notification);
+        mSessionTitleNotification.setOnTouchListener((view, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    mSessionTitleNotificationDownX = event.getRawX();
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    view.setTranslationX(event.getRawX() - mSessionTitleNotificationDownX);
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    float distance = event.getRawX() - mSessionTitleNotificationDownX;
+                    if (Math.abs(distance) > view.getWidth() / 4f) {
+                        dismissSessionTitleNotification(distance >= 0 ? 1 : -1);
+                    } else {
+                        view.animate().translationX(0).setDuration(150).start();
+                    }
+                    return true;
+                default:
+                    return true;
+            }
+        });
 
         View content = findViewById(android.R.id.content);
         content.setOnApplyWindowInsetsListener((v, insets) -> {
@@ -624,6 +655,46 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         mLastToast = Toast.makeText(TermuxActivity.this, text, longDuration ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT);
         mLastToast.setGravity(Gravity.TOP, 0, 0);
         mLastToast.show();
+    }
+
+    /** Show a dismissible title update for a non-current session. */
+    public void showSessionTitleNotification(String text, TerminalSession session) {
+        if (mSessionTitleNotification == null || session == null || text == null || text.isEmpty()) return;
+        if (mDismissedSessionTitleNotifications.contains(session.mHandle)) return;
+
+        mSessionTitleNotificationHandle = session.mHandle;
+        mSessionTitleNotification.setText(text);
+        mSessionTitleNotification.setTranslationX(0);
+        mSessionTitleNotification.setAlpha(1f);
+        mSessionTitleNotification.setVisibility(View.VISIBLE);
+    }
+
+    private void dismissSessionTitleNotification(int direction) {
+        if (mSessionTitleNotification == null || mSessionTitleNotificationHandle == null) return;
+        String handle = mSessionTitleNotificationHandle;
+        mDismissedSessionTitleNotifications.add(handle);
+        mSessionTitleNotification.animate()
+            .translationX(direction * mSessionTitleNotification.getWidth())
+            .alpha(0f)
+            .setDuration(180)
+            .withEndAction(() -> {
+                mSessionTitleNotification.setVisibility(View.GONE);
+                mSessionTitleNotification.setTranslationX(0);
+                mSessionTitleNotification.setAlpha(1f);
+                if (handle.equals(mSessionTitleNotificationHandle)) mSessionTitleNotificationHandle = null;
+            }).start();
+    }
+
+    public void clearSessionTitleNotification(TerminalSession session) {
+        if (session == null) return;
+        mDismissedSessionTitleNotifications.remove(session.mHandle);
+        if (session.mHandle.equals(mSessionTitleNotificationHandle)) {
+            mSessionTitleNotification.animate().alpha(0f).setDuration(120).withEndAction(() -> {
+                mSessionTitleNotification.setVisibility(View.GONE);
+                mSessionTitleNotification.setAlpha(1f);
+                mSessionTitleNotificationHandle = null;
+            }).start();
+        }
     }
 
 
