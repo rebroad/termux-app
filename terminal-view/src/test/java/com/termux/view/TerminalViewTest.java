@@ -12,6 +12,18 @@ public class TerminalViewTest {
     }
 
     @Test
+    public void newOutputIndicatorIsShownWhenEnabledAndScrolledUp() {
+        assertEquals(true, TerminalView.shouldShowNewOutputIndicator(true, false, false));
+    }
+
+    @Test
+    public void newOutputIndicatorIsHiddenWhenDisabledOrAtBottom() {
+        assertEquals(false, TerminalView.shouldShowNewOutputIndicator(false, false, false));
+        assertEquals(false, TerminalView.shouldShowNewOutputIndicator(true, true, false));
+        assertEquals(false, TerminalView.shouldShowNewOutputIndicator(true, false, true));
+    }
+
+    @Test
     public void screenUpdatePreservesScrolledUpViewport() {
         assertEquals(-5, TerminalView.calculateTopRowAfterScreenUpdate(-2, 12, 3, false));
     }

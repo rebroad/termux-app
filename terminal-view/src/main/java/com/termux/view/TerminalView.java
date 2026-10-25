@@ -1,5 +1,6 @@
 package com.termux.view;
 
+import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
@@ -7,6 +8,8 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Handler;
@@ -68,6 +71,14 @@ public final class TerminalView extends View {
 
     /** The top row of text to display. Ranges from -activeTranscriptRows to 0. */
     int mTopRow;
+
+    /** Whether a control for new output should be shown while scrolled up. */
+    private boolean mShowNewOutputIndicator;
+    private boolean mNewOutputAvailable;
+    private final RectF mNewOutputIndicatorBounds = new RectF();
+    private final Paint mNewOutputIndicatorPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private ValueAnimator mNewOutputIndicatorAnimator;
+    private float mNewOutputIndicatorPulse = 1f;
     int[] mDefaultSelectors = new int[]{-1,-1,-1,-1};
 
     float mScaleFactor = 1.f;
@@ -280,6 +291,13 @@ public final class TerminalView extends View {
         TERMINAL_VIEW_KEY_LOGGING_ENABLED = value;
     }
 
+    /** Sets whether a control for new output should be shown while scrolled up. */
+    public void setShowNewOutputIndicator(boolean value) {
+        mShowNewOutputIndicator = value;
+        if (!value) clearNewOutputIndicator();
+        else invalidate();
+    }
+
 
 
     /**
@@ -460,6 +478,7 @@ public final class TerminalView extends View {
         int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
         if (mTopRow < -rowsInHistory) mTopRow = -rowsInHistory;
         boolean wasAtBottom = mTopRow == 0;
+        boolean hasNewOutput = mEmulator.getScrollCounter() != 0;
 
         if (isSelectingText() || mEmulator.isAutoScrollDisabled()) {
 
@@ -494,6 +513,12 @@ public final class TerminalView extends View {
             mTopRow = updatedTopRow;
         }
 
+        if (shouldShowNewOutputIndicator(mShowNewOutputIndicator, wasAtBottom,
+            isSelectingText()) && hasNewOutput)
+            showNewOutputIndicator();
+        else if (mTopRow == 0)
+            clearNewOutputIndicator();
+
         mEmulator.clearScrollCounter();
 
         invalidate();
@@ -504,6 +529,42 @@ public final class TerminalView extends View {
         int updatedTopRow = Math.max(-rowsInHistory, Math.min(0, topRow));
         if (wasAtBottom) return 0;
         return Math.max(-rowsInHistory, updatedTopRow - rowShift);
+    }
+
+    static boolean shouldShowNewOutputIndicator(boolean enabled, boolean wasAtBottom, boolean selectingText) {
+        return enabled && !wasAtBottom && !selectingText;
+    }
+
+    private void showNewOutputIndicator() {
+        mNewOutputAvailable = true;
+        if (mNewOutputIndicatorAnimator == null) {
+            mNewOutputIndicatorAnimator = ValueAnimator.ofFloat(0.75f, 1f);
+            mNewOutputIndicatorAnimator.setDuration(700);
+            mNewOutputIndicatorAnimator.setRepeatCount(ValueAnimator.INFINITE);
+            mNewOutputIndicatorAnimator.setRepeatMode(ValueAnimator.REVERSE);
+            mNewOutputIndicatorAnimator.addUpdateListener(animation -> {
+                mNewOutputIndicatorPulse = (float) animation.getAnimatedValue();
+                invalidate();
+            });
+        }
+        if (!mNewOutputIndicatorAnimator.isStarted()) mNewOutputIndicatorAnimator.start();
+        invalidate();
+    }
+
+    private void clearNewOutputIndicator() {
+        mNewOutputAvailable = false;
+        if (mNewOutputIndicatorAnimator != null) mNewOutputIndicatorAnimator.cancel();
+        mNewOutputIndicatorPulse = 1f;
+        invalidate();
+    }
+
+    private boolean handleNewOutputIndicatorTouch(MotionEvent event) {
+        if (!mNewOutputAvailable || !mNewOutputIndicatorBounds.contains(event.getX(), event.getY())) return false;
+        if (event.getAction() == MotionEvent.ACTION_UP) {
+            mTopRow = 0;
+            clearNewOutputIndicator();
+        }
+        return true;
     }
 
     /** This must be called by the hosting activity in {@link Activity#onContextMenuClosed(Menu)}
@@ -591,6 +652,7 @@ public final class TerminalView extends View {
                 handleKeyCode(up ? KeyEvent.KEYCODE_DPAD_UP : KeyEvent.KEYCODE_DPAD_DOWN, 0);
             } else {
                 mTopRow = Math.min(0, Math.max(-(mEmulator.getScreen().getActiveTranscriptRows()), mTopRow + (up ? -1 : 1)));
+                if (mTopRow == 0) clearNewOutputIndicator();
                 if (!awakenScrollBars()) invalidate();
             }
         }
@@ -614,6 +676,8 @@ public final class TerminalView extends View {
     public boolean onTouchEvent(MotionEvent event) {
         if (mEmulator == null) return true;
         final int action = event.getAction();
+
+        if (handleNewOutputIndicatorTouch(event)) return true;
 
         if (isSelectingText()) {
             updateFloatingToolbarVisibility(event);
@@ -1029,6 +1093,30 @@ public final class TerminalView extends View {
             // render the text selection handles
             renderTextSelection();
         }
+        drawNewOutputIndicator(canvas);
+    }
+
+    private void drawNewOutputIndicator(Canvas canvas) {
+        if (!mNewOutputAvailable || isSelectingText()) return;
+
+        float density = getResources().getDisplayMetrics().density;
+        float radius = 20f * density * mNewOutputIndicatorPulse;
+        float centerX = getWidth() - 28f * density;
+        float centerY = getHeight() - 28f * density;
+        mNewOutputIndicatorBounds.set(centerX - 24f * density, centerY - 24f * density,
+            centerX + 24f * density, centerY + 24f * density);
+
+        mNewOutputIndicatorPaint.setColor(0xDD424242);
+        canvas.drawCircle(centerX, centerY, radius, mNewOutputIndicatorPaint);
+        mNewOutputIndicatorPaint.setColor(0xFFFFFFFF);
+        mNewOutputIndicatorPaint.setStrokeWidth(2f * density);
+        mNewOutputIndicatorPaint.setStyle(Paint.Style.STROKE);
+        mNewOutputIndicatorPaint.setStrokeCap(Paint.Cap.ROUND);
+        canvas.drawLine(centerX - 7f * density, centerY - 3f * density,
+            centerX, centerY + 4f * density, mNewOutputIndicatorPaint);
+        canvas.drawLine(centerX, centerY + 4f * density,
+            centerX + 7f * density, centerY - 3f * density, mNewOutputIndicatorPaint);
+        mNewOutputIndicatorPaint.setStyle(Paint.Style.FILL);
     }
 
     public TerminalSession getCurrentSession() {
@@ -1449,6 +1537,7 @@ public final class TerminalView extends View {
 
     @Override
     protected void onDetachedFromWindow() {
+        if (mNewOutputIndicatorAnimator != null) mNewOutputIndicatorAnimator.cancel();
         super.onDetachedFromWindow();
 
         if (mTextSelectionCursorController != null) {
