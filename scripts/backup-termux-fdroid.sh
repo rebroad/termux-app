@@ -12,7 +12,7 @@ REMOTE_ROOT="/data/data/com.termux"
 RETRY_DELAY="${RETRY_DELAY:-20}"
 
 SSH_OPTS=(-o ConnectTimeout=12 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
-RSYNC_OPTS=(-a --numeric-ids --partial --append-verify --timeout=30 --contimeout=12)
+RSYNC_OPTS=(-a --numeric-ids --partial --append-verify --timeout=30)
 
 mkdir -p "$DEST/files/home" "$DEST/files/usr" \
     "$DEST/package-data/shared_prefs" "$DEST/package-data/databases"
