@@ -114,6 +114,7 @@ android {
             shrinkResources false // Reproducible builds
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             if (rebroadSigningEnabled) signingConfig signingConfigs.rebroad
+            else if (System.getenv("TERMUX_CI_TEST_KEY_SIGNING") == "1") signingConfig signingConfigs.debug
         }
 
         debug {
