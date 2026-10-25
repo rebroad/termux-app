@@ -128,6 +128,15 @@ public class TermuxAppSharedPreferences extends AppSharedPreferences {
         SharedPreferenceUtils.setBoolean(mSharedPreferences, TERMUX_APP.KEY_KEEP_SCREEN_ON, value, false);
     }
 
+    public boolean isUnameSyscallInterceptEnabled() {
+        return SharedPreferenceUtils.getBoolean(mSharedPreferences, TERMUX_APP.KEY_UNAME_SYSCALL_INTERCEPT_ENABLED,
+            TERMUX_APP.DEFAULT_VALUE_UNAME_SYSCALL_INTERCEPT_ENABLED);
+    }
+
+    public void setUnameSyscallInterceptEnabled(boolean value) {
+        SharedPreferenceUtils.setBoolean(mSharedPreferences, TERMUX_APP.KEY_UNAME_SYSCALL_INTERCEPT_ENABLED, value, false);
+    }
+
 
 
     public static int[] getDefaultFontSizes(Context context) {

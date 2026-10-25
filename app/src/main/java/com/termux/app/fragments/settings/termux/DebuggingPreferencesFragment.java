@@ -1,12 +1,15 @@
 package com.termux.app.fragments.settings.termux;
 
 import android.content.Context;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Process;
 
 import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.preference.ListPreference;
+import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceDataStore;
 import androidx.preference.PreferenceFragmentCompat;
@@ -14,6 +17,7 @@ import androidx.preference.PreferenceManager;
 
 import com.termux.R;
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences;
+import com.termux.shared.termux.shell.command.environment.TermuxAppShellEnvironment;
 import com.termux.shared.logger.Logger;
 
 @Keep
@@ -28,6 +32,13 @@ public class DebuggingPreferencesFragment extends PreferenceFragmentCompat {
         preferenceManager.setPreferenceDataStore(DebuggingPreferencesDataStore.getInstance(context));
 
         setPreferencesFromResource(R.xml.termux_debugging_preferences, rootKey);
+
+        Preference unameSyscallInterceptPreference = findPreference("uname_syscall_intercept_enabled");
+        if (unameSyscallInterceptPreference != null && (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || !Process.is64Bit() ||
+            Build.SUPPORTED_ABIS.length == 0 ||
+            !"arm64-v8a".equals(Build.SUPPORTED_ABIS[0]))) {
+            unameSyscallInterceptPreference.setVisible(false);
+        }
 
         configureLoggingPreferences(context);
     }
@@ -132,6 +143,10 @@ class DebuggingPreferencesDataStore extends PreferenceDataStore {
             case "crash_report_notifications_enabled":
                 mPreferences.setCrashReportNotificationsEnabled(value);
                 break;
+            case "uname_syscall_intercept_enabled":
+                mPreferences.setUnameSyscallInterceptEnabled(value);
+                TermuxAppShellEnvironment.updateUnameSyscallInterceptEnabled(mContext);
+                break;
             default:
                 break;
         }
@@ -147,6 +162,8 @@ class DebuggingPreferencesDataStore extends PreferenceDataStore {
                 return mPreferences.arePluginErrorNotificationsEnabled(false);
             case "crash_report_notifications_enabled":
                 return mPreferences.areCrashReportNotificationsEnabled(false);
+            case "uname_syscall_intercept_enabled":
+                return mPreferences.isUnameSyscallInterceptEnabled();
             default:
                 return false;
         }
