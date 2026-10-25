@@ -134,6 +134,7 @@ final class TermuxInstaller {
             if (TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
                 Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" exists but is empty or only contains specific unimportant files.");
             } else {
+                migrateReBroadAptRepositoryIfNeeded();
                 whenDone.run();
                 return;
             }
@@ -294,6 +295,74 @@ final class TermuxInstaller {
                 }
             }
         }.start();
+    }
+
+    /**
+     * Existing Termux installations do not unpack the bootstrap ZIP on APK
+     * upgrade. Import only the missing ReBroad APT files once, leaving any
+     * existing APT sources, preferences and mirror selections untouched.
+     */
+    private static void migrateReBroadAptRepositoryIfNeeded() {
+        if (!android.os.Process.is64Bit()) return;
+
+        File marker = new File(TERMUX_PREFIX_DIR_PATH, "etc/termux/rebroad-apt-repository-v1");
+        if (marker.exists()) return;
+
+        Set<String> pending = new HashSet<>();
+        pending.add("etc/apt/keyrings/rebroad.asc");
+        pending.add("etc/apt/sources.list.d/rebroad.list");
+        pending.add("etc/apt/preferences.d/00-rebroad");
+
+        try {
+            byte[] zipBytes = loadZipBytes();
+            try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+                ZipEntry entry;
+                byte[] buffer = new byte[8192];
+                while (!pending.isEmpty() && (entry = zip.getNextEntry()) != null) {
+                    String name = entry.getName();
+                    if (!pending.contains(name) || entry.isDirectory()) continue;
+
+                    File destination = new File(TERMUX_PREFIX_DIR_PATH, name);
+                    File parent = destination.getParentFile();
+                    if (!parent.isDirectory() && !parent.mkdirs())
+                        throw new java.io.IOException("Cannot create APT directory: " + parent);
+
+                    if (!destination.exists()) {
+                        File temporary = File.createTempFile("rebroad-apt-", ".tmp", parent);
+                        try {
+                            try (FileOutputStream output = new FileOutputStream(temporary)) {
+                                int bytes;
+                                while ((bytes = zip.read(buffer)) != -1)
+                                    output.write(buffer, 0, bytes);
+                            }
+                            Os.chmod(temporary.getAbsolutePath(), 0644);
+                            if (!temporary.renameTo(destination))
+                                throw new java.io.IOException("Cannot install APT configuration: " + destination);
+                        } finally {
+                            // A successful rename moves the file; otherwise clean up the partial file.
+                            if (temporary.exists() && !temporary.delete())
+                                Logger.logWarn(LOG_TAG, "Cannot remove temporary APT config: " + temporary);
+                        }
+                    }
+                    pending.remove(name);
+                }
+            }
+
+            if (!pending.isEmpty()) {
+                Logger.logWarn(LOG_TAG, "ReBroad APT bootstrap entries missing: " + pending);
+                return;
+            }
+
+            File markerParent = marker.getParentFile();
+            if (!markerParent.isDirectory() && !markerParent.mkdirs())
+                throw new java.io.IOException("Cannot create APT migration marker directory");
+            if (!marker.createNewFile() && !marker.exists())
+                throw new java.io.IOException("Cannot record ReBroad APT migration");
+            Logger.logInfo(LOG_TAG, "Installed the signed ReBroad APT source for an existing Termux prefix.");
+        } catch (Exception e) {
+            // Do not prevent a previously working Termux session from starting.
+            Logger.logError(LOG_TAG, "ReBroad APT source migration failed: " + e);
+        }
     }
 
     public static boolean checkIfMinOrMaxSdkVersionIsIncompatible(Activity activity,
