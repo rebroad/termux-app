@@ -134,8 +134,12 @@ final class TermuxInstaller {
             if (TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
                 Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" exists but is empty or only contains specific unimportant files.");
             } else {
-                migrateReBroadAptRepositoryIfNeeded(activity);
-                whenDone.run();
+                new Thread(() -> {
+                    if (migrateReBroadAptRepositoryIfNeeded(activity)) {
+                        refreshAptPackageIndexes(activity);
+                    }
+                    activity.runOnUiThread(whenDone);
+                }).start();
                 return;
             }
         } else if (FileUtils.fileExists(TERMUX_PREFIX_DIR_PATH, false)) {
@@ -275,7 +279,9 @@ final class TermuxInstaller {
                     }
 
                     Logger.logInfo(LOG_TAG, "Bootstrap packages installed successfully.");
-                    migrateReBroadAptRepositoryIfNeeded(activity);
+                    if (migrateReBroadAptRepositoryIfNeeded(activity)) {
+                        refreshAptPackageIndexes(activity);
+                    }
 
                     // Recreate env file since termux prefix was wiped earlier
                     TermuxShellEnvironment.writeEnvironmentToFile(activity);
@@ -303,11 +309,12 @@ final class TermuxInstaller {
      * upgrade. Import only the missing ReBroad APT files once, leaving any
      * existing APT sources, preferences and mirror selections untouched.
      */
-    private static void migrateReBroadAptRepositoryIfNeeded(Context context) {
-        if (!android.os.Process.is64Bit()) return;
+    private static boolean migrateReBroadAptRepositoryIfNeeded(Context context) {
+        if (!android.os.Process.is64Bit()) return false;
 
         File marker = new File(TERMUX_PREFIX_DIR_PATH, "etc/termux/rebroad-apt-repository-v3");
-        if (marker.exists()) return;
+        File indexMarker = new File(TERMUX_PREFIX_DIR_PATH, "etc/termux/rebroad-apt-index-v3");
+        if (marker.exists()) return !indexMarker.exists();
 
         String[] paths = {
             "etc/apt/keyrings/rebroad.asc",
@@ -351,8 +358,32 @@ final class TermuxInstaller {
             if (!marker.createNewFile() && !marker.exists())
                 throw new java.io.IOException("Cannot record ReBroad APT migration");
             Logger.logInfo(LOG_TAG, "Installed the signed ReBroad APT source and archive key.");
+            return true;
         } catch (Exception e) {
             Logger.logError(LOG_TAG, "ReBroad APT source migration failed: " + e);
+            return false;
+        }
+    }
+
+    private static void refreshAptPackageIndexes(Activity activity) {
+        try {
+            ExecutionCommand command = new ExecutionCommand(-1, "apt-get", new String[]{"update"}, null,
+                    null, ExecutionCommand.Runner.APP_SHELL.getName(), false);
+            command.commandLabel = "Refresh ReBroad APT package indexes";
+            command.backgroundCustomLogLevel = Logger.LOG_LEVEL_NORMAL;
+            AppShell appShell = AppShell.execute(activity, command, null, new TermuxShellEnvironment(), null, true);
+            if (appShell == null || !command.isSuccessful() || command.resultData.exitCode != 0) {
+                Logger.logWarn(LOG_TAG, "Automatic APT index refresh failed; it will be retried on next app start.");
+                return;
+            }
+
+            File marker = new File(TERMUX_PREFIX_DIR_PATH, "etc/termux/rebroad-apt-index-v3");
+            if (!marker.getParentFile().isDirectory() && !marker.getParentFile().mkdirs())
+                throw new java.io.IOException("Cannot create APT index marker directory");
+            if (!marker.createNewFile() && !marker.exists())
+                throw new java.io.IOException("Cannot record APT index refresh");
+        } catch (Exception e) {
+            Logger.logWarn(LOG_TAG, "Automatic APT index refresh failed: " + e);
         }
     }
 
