@@ -17,16 +17,16 @@ import android.view.ContextMenu.ContextMenuInfo;
 import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.view.MotionEvent;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.RelativeLayout;
-import android.widget.Toast;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.termux.R;
 import com.termux.app.api.file.FileReceiverActivity;
@@ -155,6 +155,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private TextView mSessionTitleNotification;
     private String mSessionTitleNotificationHandle;
     private float mSessionTitleNotificationDownX;
+    private int mSessionTitleNotificationAnimationGeneration;
     private final Set<String> mDismissedSessionTitleNotifications = new HashSet<>();
 
     /**
@@ -662,6 +663,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (mSessionTitleNotification == null || session == null || text == null || text.isEmpty()) return;
         if (mDismissedSessionTitleNotifications.contains(session.mHandle)) return;
 
+        mSessionTitleNotification.animate().cancel();
+        mSessionTitleNotificationAnimationGeneration++;
         mSessionTitleNotificationHandle = session.mHandle;
         mSessionTitleNotification.setText(text);
         mSessionTitleNotification.setTranslationX(0);
@@ -672,16 +675,19 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private void dismissSessionTitleNotification(int direction) {
         if (mSessionTitleNotification == null || mSessionTitleNotificationHandle == null) return;
         String handle = mSessionTitleNotificationHandle;
+        int animationGeneration = ++mSessionTitleNotificationAnimationGeneration;
         mDismissedSessionTitleNotifications.add(handle);
         mSessionTitleNotification.animate()
             .translationX(direction * mSessionTitleNotification.getWidth())
             .alpha(0f)
             .setDuration(180)
             .withEndAction(() -> {
+                if (animationGeneration != mSessionTitleNotificationAnimationGeneration ||
+                    !handle.equals(mSessionTitleNotificationHandle)) return;
                 mSessionTitleNotification.setVisibility(View.GONE);
                 mSessionTitleNotification.setTranslationX(0);
                 mSessionTitleNotification.setAlpha(1f);
-                if (handle.equals(mSessionTitleNotificationHandle)) mSessionTitleNotificationHandle = null;
+                mSessionTitleNotificationHandle = null;
             }).start();
     }
 
@@ -689,7 +695,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (session == null) return;
         mDismissedSessionTitleNotifications.remove(session.mHandle);
         if (session.mHandle.equals(mSessionTitleNotificationHandle)) {
+            int animationGeneration = ++mSessionTitleNotificationAnimationGeneration;
+            mSessionTitleNotification.animate().cancel();
             mSessionTitleNotification.animate().alpha(0f).setDuration(120).withEndAction(() -> {
+                if (animationGeneration != mSessionTitleNotificationAnimationGeneration ||
+                    !session.mHandle.equals(mSessionTitleNotificationHandle)) return;
                 mSessionTitleNotification.setVisibility(View.GONE);
                 mSessionTitleNotification.setAlpha(1f);
                 mSessionTitleNotificationHandle = null;
