@@ -1,0 +1,57 @@
+name: ReBroad beta rebase validation
+
+on:
+  push:
+    branches:
+      - ci-fdroid-beta-0.119.0-beta.3
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out F-Droid beta rebase
+        uses: actions/checkout@v4
+
+      - name: Set up Java 11 for upstream beta Gradle 7.2
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ""
+
+      - name: Install beta Android platform, build-tools, NDK
+        run: sdkmanager --install "platforms;android-30" "build-tools;30.0.3" "ndk;22.1.7171670"
+
+      - name: Verify beta identity and second-stage installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'versionName "0.119.0-beta.3-rebroad.1"' app/build.gradle
+          grep -Fq 'versionCode 1025' app/build.gradle
+          grep -Fq 'Running Termux bootstrap second stage.' app/src/main/java/com/termux/app/TermuxInstaller.java
+          grep -Fq 'updateCustomizedTermuxExecIfNeeded' app/src/main/java/com/termux/app/TermuxInstaller.java
+          grep -Fq 'case 777:' terminal-emulator/src/main/java/com/termux/terminal/TerminalEmulator.java
+
+      - name: Run JVM unit tests
+        run: ./gradlew test --no-daemon --console=plain
+
+      - name: Build Android 7+ debug APK
+        env:
+          TERMUX_PACKAGE_VARIANT: apt-android-7
+        run: ./gradlew :app:assembleDebug --no-daemon --console=plain
+
+      - name: Upload debug APK for device smoke testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: rebroad-beta-debug-android-7
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
