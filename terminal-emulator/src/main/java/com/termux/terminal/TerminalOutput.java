@@ -29,4 +29,8 @@ public abstract class TerminalOutput {
 
     public abstract void onColorsChanged();
 
+    /** Notify the terminal client that an application requested the soft keyboard. */
+    public void onSoftKeyboardRequest() {
+    }
+
 }
