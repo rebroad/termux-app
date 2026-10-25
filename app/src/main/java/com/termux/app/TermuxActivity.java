@@ -68,8 +68,6 @@ import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.viewpager.widget.ViewPager;
 
 import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
 
 /**
  * A terminal emulator activity.
@@ -156,7 +154,6 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private String mSessionTitleNotificationHandle;
     private float mSessionTitleNotificationDownX;
     private int mSessionTitleNotificationAnimationGeneration;
-    private final Set<String> mDismissedSessionTitleNotifications = new HashSet<>();
 
     /**
      * If between onResume() and onStop(). Note that only one session is in the foreground of the terminal view at the
@@ -661,7 +658,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     /** Show a dismissible title update for a non-current session. */
     public void showSessionTitleNotification(String text, TerminalSession session) {
         if (mSessionTitleNotification == null || session == null || text == null || text.isEmpty()) return;
-        if (mDismissedSessionTitleNotifications.contains(session.mHandle)) return;
+        if (mTermuxService == null || mTermuxService.isSessionTitleNotificationDismissed(session.mHandle)) return;
 
         mSessionTitleNotification.animate().cancel();
         mSessionTitleNotificationAnimationGeneration++;
@@ -676,7 +673,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (mSessionTitleNotification == null || mSessionTitleNotificationHandle == null) return;
         String handle = mSessionTitleNotificationHandle;
         int animationGeneration = ++mSessionTitleNotificationAnimationGeneration;
-        mDismissedSessionTitleNotifications.add(handle);
+        mTermuxService.setSessionTitleNotificationDismissed(handle, true);
         mSessionTitleNotification.animate()
             .translationX(direction * mSessionTitleNotification.getWidth())
             .alpha(0f)
@@ -693,7 +690,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     public void clearSessionTitleNotification(TerminalSession session) {
         if (session == null) return;
-        mDismissedSessionTitleNotifications.remove(session.mHandle);
+        if (mTermuxService != null) mTermuxService.setSessionTitleNotificationDismissed(session.mHandle, false);
         if (session.mHandle.equals(mSessionTitleNotificationHandle)) {
             int animationGeneration = ++mSessionTitleNotificationAnimationGeneration;
             mSessionTitleNotification.animate().cancel();
