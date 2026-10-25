@@ -60,7 +60,7 @@ android {
         minSdk buildMinSdk
         targetSdk buildTargetSdk
         versionCode 1025
-        versionName "0.119.0-beta.3-rebroad.0"
+        versionName "0.119.0-beta.3-rebroad.1"
 
         manifestPlaceholders.TERMUX_GIT_COMMIT = gitCommit
 
