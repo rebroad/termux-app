@@ -11,6 +11,10 @@ release/
 .cxx
 *.zip
 
+# Local Termux migration backups (may contain credentials and large trees)
+termux-fdroid-backup-*/
+.termux-backup-*/
+
 # Local configuration file (sdk path, etc)
 local.properties
 
