@@ -305,7 +305,7 @@ final class TermuxInstaller {
     private static void migrateReBroadAptRepositoryIfNeeded() {
         if (!android.os.Process.is64Bit()) return;
 
-        File marker = new File(TERMUX_PREFIX_DIR_PATH, "etc/termux/rebroad-apt-repository-v1");
+        File marker = new File(TERMUX_PREFIX_DIR_PATH, "etc/termux/rebroad-apt-repository-v2");
         if (marker.exists()) return;
 
         Set<String> pending = new HashSet<>();
@@ -327,7 +327,10 @@ final class TermuxInstaller {
                     if (!parent.isDirectory() && !parent.mkdirs())
                         throw new java.io.IOException("Cannot create APT directory: " + parent);
 
-                    if (!destination.exists()) {
+                    // Always replace ReBroad's own archive key during key rotation.
+                    // Preserve existing mirror choices, source lists, and APT pins.
+                    boolean refreshArchiveKey = "etc/apt/keyrings/rebroad.asc".equals(name);
+                    if (refreshArchiveKey || !destination.exists()) {
                         File temporary = File.createTempFile("rebroad-apt-", ".tmp", parent);
                         try {
                             try (FileOutputStream output = new FileOutputStream(temporary)) {
