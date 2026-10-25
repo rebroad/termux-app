@@ -24,6 +24,12 @@ android {
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
     def appVersionName = System.getenv("TERMUX_APP_VERSION_NAME") ?: ""
     def apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
+    def gitCommit = System.getenv("TERMUX_GIT_COMMIT")
+    if (!(gitCommit ==~ /[0-9a-fA-F]{10}/)) {
+        def gitCommitProcess = new ProcessBuilder("git", "rev-parse", "HEAD").directory(rootDir).redirectErrorStream(true).start()
+        def gitCommitOutput = gitCommitProcess.inputStream.getText("UTF-8").trim()
+        gitCommit = gitCommitProcess.waitFor() == 0 && gitCommitOutput ==~ /[0-9a-fA-F]{40}/ ? gitCommitOutput.substring(0, 10) : "Unknown"
+    }
     def rebroadSigningStoreFile = System.getenv("TERMUX_REBROAD_SIGNING_STORE_FILE")
     def rebroadSigningStorePassword = System.getenv("TERMUX_REBROAD_SIGNING_STORE_PASSWORD")
     def rebroadSigningKeyAlias = System.getenv("TERMUX_REBROAD_SIGNING_KEY_ALIAS")
@@ -55,6 +61,8 @@ android {
         targetSdk buildTargetSdk
         versionCode 1024
         versionName "0.119.0-beta.3-rebroad.0"
+
+        manifestPlaceholders.TERMUX_GIT_COMMIT = gitCommit
 
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)
