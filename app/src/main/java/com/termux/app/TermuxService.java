@@ -50,7 +50,9 @@ import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * A service holding a list of {@link TermuxSession} in {@link TermuxShellManager#mTermuxSessions} and background {@link AppShell}
@@ -97,6 +99,18 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
      * Termux app shell manager
      */
     private TermuxShellManager mShellManager;
+
+    /** Keep dismissal state for running sessions even when their activity is recreated. */
+    private final Set<String> mDismissedSessionTitleNotifications = new HashSet<>();
+
+    boolean isSessionTitleNotificationDismissed(String handle) {
+        return mDismissedSessionTitleNotifications.contains(handle);
+    }
+
+    void setSessionTitleNotificationDismissed(String handle, boolean dismissed) {
+        if (dismissed) mDismissedSessionTitleNotifications.add(handle);
+        else mDismissedSessionTitleNotifications.remove(handle);
+    }
 
     /** The wake lock and wifi lock are always acquired and released together. */
     private PowerManager.WakeLock mWakeLock;
@@ -640,6 +654,10 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     public void onTermuxSessionExited(final TermuxSession termuxSession) {
         if (termuxSession != null) {
             ExecutionCommand executionCommand = termuxSession.getExecutionCommand();
+
+            TerminalSession terminalSession = termuxSession.getTerminalSession();
+            if (terminalSession != null)
+                mDismissedSessionTitleNotifications.remove(terminalSession.mHandle);
 
             Logger.logVerbose(LOG_TAG, "The onTermuxSessionExited() callback called for \"" + executionCommand.getCommandIdAndLabelLogString() + "\" TermuxSession command");
 
