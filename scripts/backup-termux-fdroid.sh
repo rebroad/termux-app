@@ -16,6 +16,8 @@ VERIFY_STABLE_DELAY="${VERIFY_STABLE_DELAY:-5}"
 SSH_OPTS=(-o ConnectTimeout=12 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
 RSYNC_OPTS=(-a --numeric-ids --partial --append-verify --human-readable \
     --info=progress2,stats2 --timeout=30)
+VERIFY_RSYNC_OPTS=(-a --numeric-ids --partial --append-verify \
+    --omit-dir-times --timeout=30)
 
 mkdir -p "$DEST/files/home" "$DEST/files/usr" \
     "$DEST/package-data/shared_prefs" "$DEST/package-data/databases"
@@ -120,7 +122,7 @@ verify_tree() {
     while true; do
         log "$label verification"
         : >"$report"
-        if rsync "${RSYNC_OPTS[@]}" --dry-run --delete --itemize-changes \
+        if rsync "${VERIFY_RSYNC_OPTS[@]}" --dry-run --itemize-changes \
             --out-format='%i %n%L' -e "ssh ${SSH_OPTS[*]}" \
             "$HOST:$remote/" "$local_path/" >"$report"; then
             if [[ ! -s "$report" ]]; then
