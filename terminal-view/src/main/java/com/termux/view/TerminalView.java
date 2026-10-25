@@ -315,12 +315,14 @@ public final class TerminalView extends View {
      */
     public boolean attachSession(TerminalSession session) {
         if (session == mTermSession) return false;
-        mTopRow = 0;
 
         mTermSession = session;
         mEmulator = null;
         mCombiningAccent = 0;
 
+        // Preserve per-session history position in the emulator cache.
+        // Do not overwrite the old session's cached row while changing sessions.
+        setTopRow(0, false);
         updateSize();
 
         // Wait with enabling the scrollbar until we have a terminal to get scroll position from.
@@ -484,7 +486,7 @@ public final class TerminalView extends View {
         if (mEmulator == null) return;
 
         int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
-        if (mTopRow < -rowsInHistory) mTopRow = -rowsInHistory;
+        if (mTopRow < -rowsInHistory) setTopRow(-rowsInHistory);
         boolean wasAtBottom = mTopRow == 0;
         boolean hasNewOutput = mEmulator.getScrollCounter() != 0;
 
@@ -499,12 +501,12 @@ public final class TerminalView extends View {
                     stopTextSelectionMode();
 
                 if (mEmulator.isAutoScrollDisabled()) {
-                    mTopRow = -rowsInHistory;
+                    setTopRow(-rowsInHistory);
                     skipScrolling = true;
                 }
             } else {
                 skipScrolling = true;
-                mTopRow -= rowShift;
+                setTopRow(mTopRow - rowShift);
                 decrementYTextSelectionCursors(rowShift);
             }
         }
@@ -518,7 +520,7 @@ public final class TerminalView extends View {
                 // of one row at a time.
                 awakenScrollBars();
             }
-            mTopRow = updatedTopRow;
+            setTopRow(updatedTopRow);
         }
 
         if (shouldShowNewOutputIndicator(mShowNewOutputIndicator, wasAtBottom,
@@ -586,7 +588,7 @@ public final class TerminalView extends View {
     private boolean handleNewOutputIndicatorTouch(MotionEvent event) {
         if (!mNewOutputAvailable || mNewOutputIndicatorAlpha == 0f || !mNewOutputIndicatorBounds.contains(event.getX(), event.getY())) return false;
         if (event.getAction() == MotionEvent.ACTION_UP) {
-            mTopRow = 0;
+            setTopRow(0);
             clearNewOutputIndicator();
         }
         return true;
@@ -680,7 +682,7 @@ public final class TerminalView extends View {
                 // e.g. less, which shifts to the alt screen without mouse handling.
                 handleKeyCode(up ? KeyEvent.KEYCODE_DPAD_UP : KeyEvent.KEYCODE_DPAD_DOWN, 0);
             } else {
-                mTopRow = Math.min(0, Math.max(-(mEmulator.getScreen().getActiveTranscriptRows()), mTopRow + (up ? -1 : 1)));
+                setTopRow(Math.min(0, Math.max(-(mEmulator.getScreen().getActiveTranscriptRows()), mTopRow + (up ? -1 : 1))));
                 if (mTopRow == 0) clearNewOutputIndicator();
                 if (!awakenScrollBars()) invalidate();
             }
@@ -1095,6 +1097,9 @@ public final class TerminalView extends View {
         int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
 
         if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
+            // If switching sessions, restore the new emulator's cached scroll position.
+            // On a resize, preserve the current scroll position instead.
+            boolean switchingEmulator = mEmulator == null;
             int previousTopRow = mTopRow;
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
@@ -1104,7 +1109,9 @@ public final class TerminalView extends View {
             if (mTerminalCursorBlinkerRunnable != null)
                 mTerminalCursorBlinkerRunnable.setEmulator(mEmulator);
 
-            mTopRow = Math.max(-mEmulator.getScreen().getActiveTranscriptRows(), Math.min(0, previousTopRow));
+            int historyRows = mEmulator.getScreen().getActiveTranscriptRows();
+            int targetTopRow = switchingEmulator ? mEmulator.getTopRow() : previousTopRow;
+            setTopRow(Math.max(-historyRows, Math.min(0, targetTopRow)));
             if (mTopRow == 0) clearNewOutputIndicator();
             scrollTo(0, 0);
             invalidate();
@@ -1187,8 +1194,15 @@ public final class TerminalView extends View {
         return mTopRow;
     }
 
-    public void setTopRow(int mTopRow) {
-        this.mTopRow = mTopRow;
+    public void setTopRow(int topRow) {
+        setTopRow(topRow, true);
+    }
+
+    public void setTopRow(int topRow, boolean updateEmulator) {
+        mTopRow = topRow;
+        if (updateEmulator && mEmulator != null) {
+            mEmulator.setTopRow(topRow);
+        }
     }
 
 
