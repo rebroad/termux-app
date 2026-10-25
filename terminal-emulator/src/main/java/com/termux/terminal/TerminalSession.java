@@ -289,6 +289,11 @@ public final class TerminalSession extends TerminalOutput {
         mClient.onColorsChanged(this);
     }
 
+    @Override
+    public void onSoftKeyboardRequest() {
+        mClient.onSoftKeyboardRequest(this);
+    }
+
     public int getPid() {
         return mShellPid;
     }

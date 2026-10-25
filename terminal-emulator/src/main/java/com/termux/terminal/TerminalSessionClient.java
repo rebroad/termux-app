@@ -24,6 +24,10 @@ public interface TerminalSessionClient {
 
     void onColorsChanged(@NonNull TerminalSession session);
 
+    /** Called when the terminal receives the Termux soft-keyboard request OSC. */
+    default void onSoftKeyboardRequest(@NonNull TerminalSession session) {
+    }
+
     void onTerminalCursorStateChange(boolean state);
 
     void setTerminalShellPid(@NonNull TerminalSession session, int pid);

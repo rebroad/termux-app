@@ -26,6 +26,7 @@ import com.termux.shared.termux.TermuxConstants;
 import com.termux.app.TermuxService;
 import com.termux.shared.termux.settings.properties.TermuxPropertyConstants;
 import com.termux.shared.termux.terminal.io.BellHandler;
+import com.termux.shared.view.KeyboardUtils;
 import com.termux.shared.logger.Logger;
 import com.termux.terminal.TerminalColors;
 import com.termux.terminal.TerminalSession;
@@ -219,6 +220,18 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void onColorsChanged(@NonNull TerminalSession changedSession) {
         if (mActivity.getCurrentSession() == changedSession)
             updateBackgroundColor();
+    }
+
+    @Override
+    public void onSoftKeyboardRequest(@NonNull TerminalSession session) {
+        if (!mActivity.isVisible() || mActivity.getCurrentSession() != session
+            || !mActivity.getPreferences().isSoftKeyboardEnabled()) return;
+
+        mActivity.runOnUiThread(() -> {
+            if (!mActivity.isVisible() || mActivity.getCurrentSession() != session) return;
+            KeyboardUtils.clearDisableSoftKeyboardFlags(mActivity);
+            KeyboardUtils.showSoftKeyboard(mActivity, mActivity.getTerminalView());
+        });
     }
 
     @Override
