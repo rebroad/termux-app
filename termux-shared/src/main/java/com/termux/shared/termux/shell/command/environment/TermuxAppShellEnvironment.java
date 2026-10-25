@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.os.Build;
+import android.os.Process;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -16,6 +17,7 @@ import com.termux.shared.termux.TermuxBootstrap;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.TermuxUtils;
 import com.termux.shared.termux.shell.am.TermuxAmSocketServer;
+import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences;
 
 import java.util.HashMap;
 
@@ -75,6 +77,8 @@ public class TermuxAppShellEnvironment {
 
     /** Environment variable for the Termux app {@link TermuxAmSocketServer#getTermuxAppAMSocketServerEnabled(Context)}. */
     public static final String ENV_TERMUX_APP__AM_SOCKET_SERVER_ENABLED = TERMUX_APP_ENV_PREFIX + "AM_SOCKET_SERVER_ENABLED";
+    /** Whether raw uname syscalls should return the configured Termux hostname. */
+    public static final String ENV_TERMUX_EXEC__UNAME_INTERCEPT = "TERMUX_EXEC__UNAME_INTERCEPT";
 
 
 
@@ -103,6 +107,15 @@ public class TermuxAppShellEnvironment {
         if (applicationInfo == null || !applicationInfo.enabled) return;
 
         HashMap<String, String> environment = new HashMap<>();
+
+        TermuxAppSharedPreferences preferences = TermuxAppSharedPreferences.build(currentPackageContext);
+        if (preferences != null) {
+            boolean unameSyscallInterceptSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Process.is64Bit() &&
+                Build.SUPPORTED_ABIS.length > 0 &&
+                "arm64-v8a".equals(Build.SUPPORTED_ABIS[0]);
+            environment.put(ENV_TERMUX_EXEC__UNAME_INTERCEPT,
+                preferences.isUnameSyscallInterceptEnabled() && unameSyscallInterceptSupported ? "1" : "0");
+        }
 
         ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_TERMUX_VERSION, PackageUtils.getVersionNameForPackage(packageInfo));
         ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_TERMUX_APP__VERSION_NAME, PackageUtils.getVersionNameForPackage(packageInfo));
@@ -167,6 +180,18 @@ public class TermuxAppShellEnvironment {
         termuxAppEnvironment.remove(ENV_TERMUX_APP__AM_SOCKET_SERVER_ENABLED);
         ShellEnvironmentUtils.putToEnvIfSet(termuxAppEnvironment, ENV_TERMUX_APP__AM_SOCKET_SERVER_ENABLED,
             TermuxAmSocketServer.getTermuxAppAMSocketServerEnabled(currentPackageContext));
+    }
+
+    /** Update the raw uname syscall interception setting for newly launched processes. */
+    public synchronized static void updateUnameSyscallInterceptEnabled(@NonNull Context currentPackageContext) {
+        if (termuxAppEnvironment == null) return;
+        TermuxAppSharedPreferences preferences = TermuxAppSharedPreferences.build(currentPackageContext);
+        if (preferences == null) return;
+        boolean unameSyscallInterceptSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Process.is64Bit() &&
+            Build.SUPPORTED_ABIS.length > 0 &&
+            "arm64-v8a".equals(Build.SUPPORTED_ABIS[0]);
+        termuxAppEnvironment.put(ENV_TERMUX_EXEC__UNAME_INTERCEPT,
+            preferences.isUnameSyscallInterceptEnabled() && unameSyscallInterceptSupported ? "1" : "0");
     }
 
 }
