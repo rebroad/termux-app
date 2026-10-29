@@ -68,6 +68,7 @@ import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.viewpager.widget.ViewPager;
 
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * A terminal emulator activity.
@@ -172,6 +173,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
      * was killed by android.
      */
     private boolean mIsActivityRecreated = false;
+    private boolean mHasShownPendingCommandRecoveryDialog;
 
     /**
      * The {@link TermuxActivity} is in an invalid state and must not be run.
@@ -195,6 +197,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private static final int CONTEXT_MENU_HELP_ID = 7;
     private static final int CONTEXT_MENU_SETTINGS_ID = 8;
     private static final int CONTEXT_MENU_REPORT_ID = 9;
+    private static final int CONTEXT_MENU_STICK_COMMAND_ID = 12;
+    private static final int CONTEXT_MENU_UNSTICK_COMMAND_ID = 13;
 
     private static final String ARG_TERMINAL_TOOLBAR_TEXT_INPUT = "terminal_toolbar_text_input";
     private static final String ARG_ACTIVITY_RECREATED = "activity_recreated";
@@ -428,6 +432,18 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 TermuxInstaller.setupBootstrapIfNeeded(TermuxActivity.this, () -> TermuxInstaller.updateCustomizedTermuxExecIfNeeded(TermuxActivity.this, () -> {
                     if (mTermuxService == null) return; // Activity might have been destroyed.
                     try {
+                        TermuxInstaller.installCommandCaptureIntegration(TermuxActivity.this);
+                        if (mTermuxService.restoreSavedTermuxSessions()) {
+                            mTermuxTerminalSessionActivityClient.termuxSessionListNotifyUpdated();
+                            mTermuxTerminalSessionActivityClient.setCurrentSession(
+                                mTermuxService.getRecoveredSelectedSessionOrLast());
+                            if (intent != null && Intent.ACTION_RUN.equals(intent.getAction())) {
+                                boolean isFailSafe = intent.getBooleanExtra(TERMUX_ACTIVITY.EXTRA_FAILSAFE_SESSION, false);
+                                mTermuxTerminalSessionActivityClient.addNewSession(isFailSafe, null);
+                            }
+                            showPendingCommandRecoveryDialog();
+                            return;
+                        }
                         boolean launchFailsafe = false;
                         if (intent != null && intent.getExtras() != null) {
                             launchFailsafe = intent.getExtras().getBoolean(TERMUX_ACTIVITY.EXTRA_FAILSAFE_SESSION, false);
@@ -442,6 +458,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 finishActivityIfNotFinishing();
             }
         } else {
+            TermuxInstaller.installCommandCaptureIntegration(TermuxActivity.this);
             // If termux was started from launcher "New session" shortcut and activity is recreated,
             // then the original intent will be re-delivered, resulting in a new session being re-added
             // each time.
@@ -458,6 +475,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         // Update the {@link TerminalSession} and {@link TerminalEmulator} clients.
         mTermuxService.setTermuxTerminalSessionClient(mTermuxTerminalSessionActivityClient);
+        showPendingCommandRecoveryDialog();
     }
 
     @Override
@@ -723,6 +741,13 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             menu.add(Menu.NONE, CONTEXT_MENU_AUTOFILL_PASSWORD, Menu.NONE, R.string.action_autofill_password);
         menu.add(Menu.NONE, CONTEXT_MENU_RESET_TERMINAL_ID, Menu.NONE, R.string.action_reset_terminal);
         menu.add(Menu.NONE, CONTEXT_MENU_KILL_PROCESS_ID, Menu.NONE, getResources().getString(R.string.action_kill_process, getCurrentSession().getPid())).setEnabled(currentSession.isRunning());
+        TermuxService service = getTermuxService();
+        if (service != null) {
+            if (service.hasPinnedCommand(currentSession))
+                menu.add(Menu.NONE, CONTEXT_MENU_UNSTICK_COMMAND_ID, Menu.NONE, R.string.action_unstick_command_for_recovery);
+            else if (service.getCommandToPin(currentSession) != null)
+                menu.add(Menu.NONE, CONTEXT_MENU_STICK_COMMAND_ID, Menu.NONE, R.string.action_stick_command_for_recovery);
+        }
         menu.add(Menu.NONE, CONTEXT_MENU_STYLING_ID, Menu.NONE, R.string.action_style_terminal);
         menu.add(Menu.NONE, CONTEXT_MENU_TOGGLE_KEEP_SCREEN_ON, Menu.NONE, R.string.action_toggle_keep_screen_on).setCheckable(true).setChecked(mPreferences.shouldKeepScreenOn());
         menu.add(Menu.NONE, CONTEXT_MENU_HELP_ID, Menu.NONE, R.string.action_open_help);
@@ -763,6 +788,15 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             case CONTEXT_MENU_KILL_PROCESS_ID:
                 showKillSessionDialog(session);
                 return true;
+            case CONTEXT_MENU_STICK_COMMAND_ID:
+                showStickCommandForRecoveryDialog(session);
+                return true;
+            case CONTEXT_MENU_UNSTICK_COMMAND_ID:
+            {
+                TermuxService service = getTermuxService();
+                if (service != null) service.unpinCommand(session);
+                return true;
+            }
             case CONTEXT_MENU_STYLING_ID:
                 showStylingDialog();
                 return true;
@@ -781,6 +815,62 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             default:
                 return super.onContextItemSelected(item);
         }
+    }
+
+    private void showStickCommandForRecoveryDialog(TerminalSession session) {
+        TermuxService service = getTermuxService();
+        if (service == null) return;
+        TermuxSessionRecoveryStore.CommandState commandState = service.getCommandToPin(session);
+        if (commandState == null) return;
+
+        String message = commandState.command + "\n\n" + getString(R.string.label_working_directory) + ": " + commandState.workingDirectory + "\n\n" +
+            getString(R.string.msg_stick_command_confirmation);
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.title_stick_command_for_recovery)
+            .setMessage(message)
+            .setPositiveButton(R.string.action_stick_command, (dialog, which) -> {
+                if (!service.pinCurrentCommand(session))
+                    Toast.makeText(this, R.string.msg_command_could_not_be_pinned, Toast.LENGTH_LONG).show();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private void showPendingCommandRecoveryDialog() {
+        if (mHasShownPendingCommandRecoveryDialog) return;
+        TermuxService service = getTermuxService();
+        if (service == null) return;
+        List<TermuxSessionRecoveryStore.SessionRecord> pending = service.getPendingCommandRecoveries();
+        if (pending.isEmpty()) return;
+
+        mHasShownPendingCommandRecoveryDialog = true;
+        showNextPendingCommandRecoveryDialog();
+    }
+
+    private void showNextPendingCommandRecoveryDialog() {
+        TermuxService service = getTermuxService();
+        if (service == null) return;
+        List<TermuxSessionRecoveryStore.SessionRecord> pending = service.getPendingCommandRecoveries();
+        if (pending.isEmpty()) return;
+
+        TermuxSessionRecoveryStore.SessionRecord record = pending.get(0);
+        String label = record.name.isEmpty() ? getString(R.string.label_terminal_session) : record.name;
+        String message = label + "\n" + record.pinnedCommand + "\n\n" +
+            getString(R.string.label_working_directory) + ": " + record.pinnedWorkingDirectory + "\n\n" +
+            getString(R.string.msg_recovery_command_confirmation);
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.title_recover_pinned_command)
+            .setMessage(message)
+            .setPositiveButton(R.string.action_run_command, (dialog, which) -> {
+                service.resolvePinnedCommand(record.id, true);
+                showNextPendingCommandRecoveryDialog();
+            })
+            .setNegativeButton(R.string.action_skip_command, (dialog, which) -> {
+                service.resolvePinnedCommand(record.id, false);
+                showNextPendingCommandRecoveryDialog();
+            })
+            .setNeutralButton(R.string.action_later, null)
+            .show();
     }
 
     @Override

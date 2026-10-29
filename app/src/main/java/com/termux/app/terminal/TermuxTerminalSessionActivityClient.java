@@ -306,6 +306,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void setCurrentSession(TerminalSession session) {
         if (session == null) return;
 
+        TermuxService service = mActivity.getTermuxService();
+        if (service != null) service.setRecoverySelectedSession(session);
+
         mActivity.clearSessionTitleNotification(session);
 
         if (mActivity.getTerminalView().attachSession(session)) {
@@ -371,8 +374,10 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         TermuxService service = mActivity.getTermuxService();
         if (service != null) {
             TermuxSession termuxSession = service.getTermuxSessionForTerminalSession(sessionToRename);
-            if (termuxSession != null)
+            if (termuxSession != null) {
                 termuxSession.getExecutionCommand().shellName = text;
+                service.updateRecoverySessionMetadata(sessionToRename);
+            }
         }
     }
 
@@ -409,6 +414,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             mActivity.getPreferences().setCurrentSession(currentSession.mHandle);
         else
             mActivity.getPreferences().setCurrentSession(null);
+
+        TermuxService service = mActivity.getTermuxService();
+        if (service != null) service.setRecoverySelectedSession(currentSession);
     }
 
     /** The current session as stored or the last one if that does not exist. */

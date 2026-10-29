@@ -31,6 +31,7 @@ import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
@@ -68,6 +69,40 @@ final class TermuxInstaller {
 
     private static final String LOG_TAG = "TermuxInstaller";
     private static final String CUSTOM_TERMUX_EXEC_MARKER = "etc/termux/rebroad-termux-exec";
+
+    /** Install the app-owned Bash command capture hook without changing user shell rc files. */
+    static boolean installCommandCaptureIntegration(Context context) {
+        File profileDirectory = new File(TERMUX_PREFIX_DIR, "etc/profile.d");
+        File destination = new File(profileDirectory, "termux-app-command-capture.sh");
+        File temporary = new File(destination.getPath() + ".tmp");
+        try {
+            if (!profileDirectory.isDirectory() && !profileDirectory.mkdirs())
+                throw new java.io.IOException("Cannot create Bash profile.d directory");
+            if (destination.isFile()) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    new java.io.FileInputStream(destination), StandardCharsets.UTF_8))) {
+                    if (!"# TERMUX_APP_MANAGED_COMMAND_CAPTURE".equals(reader.readLine())) {
+                        Logger.logWarn(LOG_TAG, "Not replacing an unmanaged Bash profile.d file: " + destination);
+                        return false;
+                    }
+                }
+            }
+            try (InputStream input = context.getAssets().open("termux-command-capture.bash");
+                 FileOutputStream output = new FileOutputStream(temporary)) {
+                byte[] buffer = new byte[4096];
+                int bytes;
+                while ((bytes = input.read(buffer)) != -1) output.write(buffer, 0, bytes);
+                output.getFD().sync();
+            }
+            Os.chmod(temporary.getAbsolutePath(), 0644);
+            Os.rename(temporary.getAbsolutePath(), destination.getAbsolutePath());
+            return true;
+        } catch (Exception e) {
+            Logger.logWarn(LOG_TAG, "Unable to install Bash command capture hook: " + e);
+            temporary.delete();
+            return false;
+        }
+    }
     private static final Set<String> CUSTOM_TERMUX_EXEC_FILES = new HashSet<>();
 
     static {
