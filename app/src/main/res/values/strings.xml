@@ -89,6 +89,19 @@
 
     <string name="action_kill_process">Kill process (%d)</string>
     <string name="title_confirm_kill_process">Really kill this session?</string>
+    <string name="action_stick_command_for_recovery">Stick running command for recovery</string>
+    <string name="action_unstick_command_for_recovery">Unstick command from recovery</string>
+    <string name="title_stick_command_for_recovery">Save this command for recovery?</string>
+    <string name="action_stick_command">Stick command</string>
+    <string name="msg_command_could_not_be_pinned">Could not save the running command for recovery.</string>
+    <string name="msg_stick_command_confirmation">The command and working directory will be saved in Termux private storage. After a process restart, Termux will ask before running it again.</string>
+    <string name="title_recover_pinned_command">Rerun saved command?</string>
+    <string name="action_run_command">Run</string>
+    <string name="action_skip_command">Skip</string>
+    <string name="action_later">Later</string>
+    <string name="label_terminal_session">Terminal session</string>
+    <string name="label_working_directory">Working directory</string>
+    <string name="msg_recovery_command_confirmation">This starts a new process in a fresh shell. The previous process state cannot be restored. Run it only if repeating the command is safe.</string>
 
     <string name="action_style_terminal">Style</string>
     <string name="action_toggle_keep_screen_on">Keep screen on</string>

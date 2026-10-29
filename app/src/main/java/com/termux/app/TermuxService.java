@@ -50,9 +50,13 @@ import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * A service holding a list of {@link TermuxSession} in {@link TermuxShellManager#mTermuxSessions} and background {@link AppShell}
@@ -100,6 +104,11 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
      */
     private TermuxShellManager mShellManager;
 
+    private TermuxSessionRecoveryStore mSessionRecoveryStore;
+
+    private final Map<TerminalSession, String> mSessionRecoveryIds = new IdentityHashMap<>();
+    private final Set<String> mRecoveredPinnedCommandIds = new HashSet<>();
+
     /** Keep dismissal state for running sessions even when their activity is recreated. */
     private final Set<String> mDismissedSessionTitleNotifications = new HashSet<>();
 
@@ -130,6 +139,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         mProperties = TermuxAppSharedProperties.getProperties();
 
         mShellManager = TermuxShellManager.getShellManager();
+        mSessionRecoveryStore = new TermuxSessionRecoveryStore(this);
 
         runStartForeground();
 
@@ -236,6 +246,8 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     /** Process action to stop service. */
     private void actionStopService() {
         mWantsToStop = true;
+        mRecoveredPinnedCommandIds.clear();
+        mSessionRecoveryStore.clear();
         killAllTermuxExecutionCommands();
         requestStopService();
     }
@@ -585,9 +597,22 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         return createTermuxSession(executionCommand);
     }
 
+    private TermuxSession createTermuxSession(String executablePath, String[] arguments, String workingDirectory,
+                                              boolean isFailSafe, String sessionName, String recoveryId) {
+        ExecutionCommand executionCommand = new ExecutionCommand(TermuxShellManager.getNextShellId(),
+            executablePath, arguments, null, workingDirectory, Runner.TERMINAL_SESSION.getName(), isFailSafe);
+        executionCommand.shellName = sessionName;
+        return createTermuxSession(executionCommand, recoveryId);
+    }
+
     /** Create a {@link TermuxSession}. */
     @Nullable
     public synchronized TermuxSession createTermuxSession(ExecutionCommand executionCommand) {
+        return createTermuxSession(executionCommand, null);
+    }
+
+    @Nullable
+    private synchronized TermuxSession createTermuxSession(ExecutionCommand executionCommand, @Nullable String requestedRecoveryId) {
         if (executionCommand == null) return null;
 
         Logger.logDebug(LOG_TAG, "Creating \"" + executionCommand.getCommandIdAndLabelLogString() + "\" TermuxSession");
@@ -606,8 +631,18 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         // If the execution command was started for a plugin, only then will the stdout be set
         // Otherwise if command was manually started by the user like by adding a new terminal session,
         // then no need to set stdout
+        String originalExecutable = executionCommand.executable;
+        String recoveryId = null;
+        HashMap<String, String> additionalEnvironment = null;
+        if (!executionCommand.isPluginExecutionCommand) {
+            recoveryId = requestedRecoveryId == null ? UUID.randomUUID().toString() : requestedRecoveryId;
+            additionalEnvironment = new HashMap<>();
+            additionalEnvironment.put("TERMUX_APP_COMMAND_CAPTURE_FILE",
+                mSessionRecoveryStore.getCommandStateFile(recoveryId).getAbsolutePath());
+        }
+
         TermuxSession newTermuxSession = TermuxSession.execute(this, executionCommand, getTermuxTerminalSessionClient(),
-            this, new TermuxShellEnvironment(), null, executionCommand.isPluginExecutionCommand);
+            this, new TermuxShellEnvironment(), additionalEnvironment, executionCommand.isPluginExecutionCommand);
         if (newTermuxSession == null) {
             Logger.logError(LOG_TAG, "Failed to execute new TermuxSession command for:\n" + executionCommand.getCommandIdAndLabelLogString());
             // If the execution command was started for a plugin, then process the error
@@ -621,6 +656,12 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         }
 
         mShellManager.mTermuxSessions.add(newTermuxSession);
+        if (recoveryId != null) {
+            TerminalSession terminalSession = newTermuxSession.getTerminalSession();
+            mSessionRecoveryIds.put(terminalSession, recoveryId);
+            mSessionRecoveryStore.saveSession(recoveryId, terminalSession.mSessionName,
+                executionCommand.workingDirectory, originalExecutable, executionCommand.isFailsafe);
+        }
 
         // Remove the execution command from the pending plugin execution commands list since it has
         // now been processed
@@ -644,10 +685,149 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     public synchronized int removeTermuxSession(TerminalSession sessionToRemove) {
         int index = getIndexOfSession(sessionToRemove);
 
-        if (index >= 0)
+        if (index >= 0) {
+            String recoveryId = mSessionRecoveryIds.remove(sessionToRemove);
+            if (recoveryId != null) {
+                mRecoveredPinnedCommandIds.remove(recoveryId);
+                mSessionRecoveryStore.removeSession(recoveryId);
+            }
             mShellManager.mTermuxSessions.get(index).finish();
+        }
 
         return index;
+    }
+
+    /** Recreate saved tabs after the app process has been killed. Commands remain pending for UI confirmation. */
+    public synchronized boolean restoreSavedTermuxSessions() {
+        if (!isTermuxSessionsEmpty()) return false;
+
+        List<TermuxSessionRecoveryStore.SessionRecord> records = mSessionRecoveryStore.getSessions();
+        if (records.isEmpty()) return false;
+
+        boolean restoredAny = false;
+        for (TermuxSessionRecoveryStore.SessionRecord record : records) {
+            TermuxSessionRecoveryStore.CommandState commandState = mSessionRecoveryStore.readCommandState(record.id);
+            String workingDirectory = record.workingDirectory;
+            if (commandState != null && commandState.workingDirectory != null && !commandState.workingDirectory.isEmpty())
+                workingDirectory = commandState.workingDirectory;
+            else if (record.pinnedWorkingDirectory != null && !record.pinnedWorkingDirectory.isEmpty())
+                workingDirectory = record.pinnedWorkingDirectory;
+
+            // A present, empty state means the pinned command returned to the shell prompt before the kill.
+            if (record.pinnedCommand != null && commandState != null && commandState.command == null)
+                mSessionRecoveryStore.clearPinnedCommand(record.id);
+            else if (record.pinnedCommand != null)
+                mRecoveredPinnedCommandIds.add(record.id);
+
+            String executable = record.executable.isEmpty() ? null : record.executable;
+            TermuxSession restored = createTermuxSession(executable, null, workingDirectory,
+                record.failsafe, record.name.isEmpty() ? null : record.name, record.id);
+            if (restored != null) restoredAny = true;
+        }
+        return restoredAny;
+    }
+
+    @Nullable
+    public synchronized TermuxSessionRecoveryStore.CommandState getCommandToPin(TerminalSession session) {
+        String recoveryId = mSessionRecoveryIds.get(session);
+        if (recoveryId == null || session == null || !session.isRunning()) return null;
+        TermuxSession termuxSession = getTermuxSessionForTerminalSession(session);
+        if (termuxSession == null || termuxSession.getExecutionCommand().isFailsafe) return null;
+        String executable = termuxSession.getExecutionCommand().executable;
+        if (executable == null || !executable.endsWith("/bash")) return null;
+
+        TermuxSessionRecoveryStore.CommandState state = mSessionRecoveryStore.readCommandState(recoveryId);
+        return state == null || state.command == null ? null : state;
+    }
+
+    public synchronized boolean pinCurrentCommand(TerminalSession session) {
+        TermuxSessionRecoveryStore.CommandState state = getCommandToPin(session);
+        String recoveryId = mSessionRecoveryIds.get(session);
+        if (state == null || recoveryId == null) return false;
+        mSessionRecoveryStore.setPinnedCommand(recoveryId, state.command, state.workingDirectory);
+        return true;
+    }
+
+    public synchronized boolean hasPinnedCommand(TerminalSession session) {
+        String recoveryId = mSessionRecoveryIds.get(session);
+        if (recoveryId == null) return false;
+        for (TermuxSessionRecoveryStore.SessionRecord record : mSessionRecoveryStore.getSessions())
+            if (recoveryId.equals(record.id)) return record.pinnedCommand != null;
+        return false;
+    }
+
+    public synchronized void unpinCommand(TerminalSession session) {
+        String recoveryId = mSessionRecoveryIds.get(session);
+        if (recoveryId != null) {
+            mRecoveredPinnedCommandIds.remove(recoveryId);
+            mSessionRecoveryStore.clearPinnedCommand(recoveryId);
+        }
+    }
+
+    public synchronized void updateRecoverySessionMetadata(TerminalSession session) {
+        String recoveryId = mSessionRecoveryIds.get(session);
+        TermuxSession termuxSession = getTermuxSessionForTerminalSession(session);
+        if (recoveryId == null || termuxSession == null) return;
+        ExecutionCommand executionCommand = termuxSession.getExecutionCommand();
+        String originalExecutable = null;
+        for (TermuxSessionRecoveryStore.SessionRecord record : mSessionRecoveryStore.getSessions()) {
+            if (recoveryId.equals(record.id)) {
+                originalExecutable = record.executable.isEmpty() ? null : record.executable;
+                break;
+            }
+        }
+        mSessionRecoveryStore.saveSession(recoveryId, session.mSessionName, session.getCwd(),
+            originalExecutable, executionCommand.isFailsafe);
+    }
+
+    public synchronized void setRecoverySelectedSession(TerminalSession session) {
+        mSessionRecoveryStore.setSelectedSessionId(session == null ? null : mSessionRecoveryIds.get(session));
+    }
+
+    @Nullable
+    public synchronized TerminalSession getRecoveredSelectedSessionOrLast() {
+        String selectedId = mSessionRecoveryStore.getSelectedSessionId();
+        if (selectedId != null) {
+            for (Map.Entry<TerminalSession, String> entry : mSessionRecoveryIds.entrySet()) {
+                if (selectedId.equals(entry.getValue())) return entry.getKey();
+            }
+        }
+        TermuxSession last = getLastTermuxSession();
+        return last == null ? null : last.getTerminalSession();
+    }
+
+    public synchronized List<TermuxSessionRecoveryStore.SessionRecord> getPendingCommandRecoveries() {
+        List<TermuxSessionRecoveryStore.SessionRecord> pending = new ArrayList<>();
+        for (TermuxSessionRecoveryStore.SessionRecord record : mSessionRecoveryStore.getSessions())
+            if (record.pinnedCommand != null && mRecoveredPinnedCommandIds.contains(record.id) &&
+                mSessionRecoveryIds.containsValue(record.id)) pending.add(record);
+        return pending;
+    }
+
+    public synchronized boolean resolvePinnedCommand(String recoveryId, boolean runCommand) {
+        TerminalSession session = null;
+        for (Map.Entry<TerminalSession, String> entry : mSessionRecoveryIds.entrySet()) {
+            if (recoveryId.equals(entry.getValue())) {
+                session = entry.getKey();
+                break;
+            }
+        }
+        TermuxSessionRecoveryStore.SessionRecord record = null;
+        for (TermuxSessionRecoveryStore.SessionRecord candidate : mSessionRecoveryStore.getSessions()) {
+            if (recoveryId.equals(candidate.id)) {
+                record = candidate;
+                break;
+            }
+        }
+        if (record == null) return false;
+
+        if (runCommand && session != null && record.pinnedCommand != null) {
+            byte[] command = (record.pinnedCommand + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            session.write(command, 0, command.length);
+        }
+        mSessionRecoveryStore.clearPinnedCommand(recoveryId);
+        mRecoveredPinnedCommandIds.remove(recoveryId);
+        return true;
     }
 
     /** Callback received when a {@link TermuxSession} finishes. */
