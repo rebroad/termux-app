@@ -14,7 +14,7 @@ Use Java 17 and the checked-in Gradle wrapper:
 ./gradlew :terminal-emulator:test  # Run one module's tests
 ```
 
-In this workspace, edit the source tree and run builds only in the designated sibling build tree (`termux-app.build` or `termux-app.make`); synchronize first with `cpto`. Do not commit generated build outputs.
+In this workspace, edit the source tree and run builds only in the designated sibling build tree (`termux-app.build` or `termux-app.make`); synchronize first with `cpto`. When the source repository contains initialized Git submodules, use `cpto -r` to copy the repository and its submodules recursively into the build tree. Do not commit generated build outputs.
 
 ## Coding Style & Naming Conventions
 

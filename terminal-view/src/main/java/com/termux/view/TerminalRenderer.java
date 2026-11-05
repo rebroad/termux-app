@@ -18,6 +18,14 @@ import com.termux.terminal.WcWidth;
  */
 public final class TerminalRenderer {
 
+    /** Masks for U+1FB00..U+1FB3B, with bits representing sextant dots 1 through 6. */
+    private static final int[] BLOCK_SEXTANT_MASKS = {
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F,
+        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F,
+        0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E
+    };
+
     final int mTextSize;
     final Typeface mTypeface;
     private final Paint mTextPaint = new Paint();
@@ -90,6 +98,7 @@ public final class TerminalRenderer {
             int lastRunStartColumn = -1;
             int lastRunStartIndex = 0;
             boolean lastRunFontWidthMismatch = false;
+            boolean lastRunIsBlockSextant = false;
             int currentCharIndex = 0;
             float measuredWidthForRun = 0.f;
 
@@ -110,8 +119,9 @@ public final class TerminalRenderer {
                 final float measuredCodePointWidth = (codePoint < asciiMeasures.length) ? asciiMeasures[codePoint] : mTextPaint.measureText(line,
                     currentCharIndex, charsForCodePoint);
                 final boolean fontWidthMismatch = Math.abs(measuredCodePointWidth / mFontWidth - codePointWcWidth) > 0.01;
+                final boolean isBlockSextant = isBlockSextant(codePoint);
 
-                if (style != lastRunStyle || insideCursor != lastRunInsideCursor || insideSelection != lastRunInsideSelection || fontWidthMismatch || lastRunFontWidthMismatch) {
+                if (style != lastRunStyle || insideCursor != lastRunInsideCursor || insideSelection != lastRunInsideSelection || fontWidthMismatch || lastRunFontWidthMismatch || isBlockSextant || lastRunIsBlockSextant) {
                     if (column == 0) {
                         // Skip first column as there is nothing to draw, just record the current style.
                     } else {
@@ -133,6 +143,7 @@ public final class TerminalRenderer {
                     lastRunStartColumn = column;
                     lastRunStartIndex = currentCharIndex;
                     lastRunFontWidthMismatch = fontWidthMismatch;
+                    lastRunIsBlockSextant = isBlockSextant;
                 }
                 measuredWidthForRun += measuredCodePointWidth;
                 column += codePointWcWidth;
@@ -213,6 +224,8 @@ public final class TerminalRenderer {
             canvas.drawRect(left, y - cursorHeight, right, y, mTextPaint);
         }
 
+        final int codePoint = runWidthChars >= 2 && Character.isSurrogatePair(text[startCharIndex], text[startCharIndex + 1])
+            ? Character.toCodePoint(text[startCharIndex], text[startCharIndex + 1]) : -1;
         if ((effect & TextStyle.CHARACTER_ATTRIBUTE_INVISIBLE) == 0) {
             if (dim) {
                 int red = (0xFF & (foreColor >> 16));
@@ -232,11 +245,39 @@ public final class TerminalRenderer {
             mTextPaint.setStrikeThruText(strikeThrough);
             mTextPaint.setColor(foreColor);
 
-            // The text alignment is the default Paint.Align.LEFT.
-            canvas.drawTextRun(text, startCharIndex, runWidthChars, startCharIndex, runWidthChars, left, y - mFontLineSpacingAndAscent, false, mTextPaint);
+            if (isBlockSextant(codePoint)) {
+                drawBlockSextant(canvas, left, y - mFontLineSpacing, right - left, foreColor, codePoint);
+                if (underline || strikeThrough) {
+                    float lineY = y - mFontLineSpacing / (strikeThrough ? 2f : 8f);
+                    canvas.drawRect(left, lineY, right, lineY + Math.max(1, mTextSize / 14f), mTextPaint);
+                }
+            } else {
+                // The text alignment is the default Paint.Align.LEFT.
+                canvas.drawTextRun(text, startCharIndex, runWidthChars, startCharIndex, runWidthChars, left, y - mFontLineSpacingAndAscent, false, mTextPaint);
+            }
         }
 
         if (savedMatrix) canvas.restore();
+    }
+
+    private static boolean isBlockSextant(int codePoint) {
+        return codePoint >= 0x1FB00 && codePoint <= 0x1FB3B;
+    }
+
+    private void drawBlockSextant(Canvas canvas, float left, float top, float width, int color, int codePoint) {
+        int mask = BLOCK_SEXTANT_MASKS[codePoint - 0x1FB00];
+        float columnWidth = width / 2f;
+        float rowHeight = mFontLineSpacing / 3f;
+        mTextPaint.setAntiAlias(false);
+        mTextPaint.setColor(color);
+        for (int dot = 0; dot < 6; dot++) {
+            if ((mask & (1 << dot)) == 0) continue;
+            int column = dot % 2;
+            int row = dot / 2;
+            canvas.drawRect(left + column * columnWidth, top + row * rowHeight,
+                left + (column + 1) * columnWidth, top + (row + 1) * rowHeight, mTextPaint);
+        }
+        mTextPaint.setAntiAlias(true);
     }
 
     public float getFontWidth() {
